@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "red-purple"
+version = "0.1.0"
+description = "Red-Purple: Offensive + Iterative Learning AI Agent Framework"
+authors = ["YounessB1"]
+packages = [{include = "redpurple"}]
+
+[tool.poetry.scripts]
+red-purple = "redpurple.main:main"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+docker = "^7.1.0"
+litellm = "^1.81.1"
+python-dotenv = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
