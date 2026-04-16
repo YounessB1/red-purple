@@ -7,7 +7,7 @@ import sys
 from dotenv import load_dotenv
 load_dotenv()
 
-from redpurple.docker_runtime import DockerRuntime
+from source.docker_runtime import DockerRuntime
 
 
 def main() -> None:
@@ -15,6 +15,7 @@ def main() -> None:
     parser.add_argument("-t", "--target", required=True, help="Target URL to pentest")
     parser.add_argument("--rebuild", action="store_true", help="Force rebuild the Docker image")
     parser.add_argument("--max-iter", type=int, default=100, help="Max agent iterations (default: 100)")
+    parser.add_argument("--task", default="", help="Custom task prompt (default: CTF flag-finding task)")
     args = parser.parse_args()
 
     try:
@@ -26,7 +27,7 @@ def main() -> None:
     runtime.build_image(force=args.rebuild)
 
     print(f"Starting agent against {args.target}...")
-    container_id = runtime.create_sandbox(name="agent", target=args.target, max_iter=args.max_iter)
+    container_id = runtime.create_sandbox(name="agent", target=args.target, max_iter=args.max_iter, task=args.task)
 
     exit_code = runtime.stream_logs(container_id)
 

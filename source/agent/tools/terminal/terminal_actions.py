@@ -1,15 +1,14 @@
 import subprocess
 from typing import Any
 
-from redpurple.agent.tools.registry import register_tool
+from source.agent.tools.registry import register_tool
 
 
 @register_tool
 def terminal_execute(command: str, timeout: int = 30) -> dict[str, Any]:
     try:
         result = subprocess.run(
-            command,
-            shell=True,
+            ["bash", "-c", command],
             capture_output=True,
             text=True,
             timeout=timeout,

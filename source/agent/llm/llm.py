@@ -1,12 +1,19 @@
+import html
 import os
 import re
+import warnings
 from typing import Any
 
 import litellm
 
-from redpurple.agent.llm.memory_compressor import MemoryCompressor
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
+from source.agent.llm.memory_compressor import MemoryCompressor
 
 litellm.drop_params = True
+
+if os.environ.get("LANGFUSE_PUBLIC_KEY"):
+    litellm.success_callback = ["langfuse"]
 
 
 def parse_tool_calls(content: str) -> list[dict[str, Any]]:
@@ -21,7 +28,7 @@ def parse_tool_calls(content: str) -> list[dict[str, Any]]:
             try:
                 args[key] = int(val)
             except ValueError:
-                args[key] = val
+                args[key] = html.unescape(val)
         calls.append({"name": name, "args": args})
     return calls
 
@@ -35,7 +42,7 @@ class LLM:
         self.api_base = os.environ.get("LLM_API_BASE")
         self.compressor = MemoryCompressor(model=self.model)
 
-    def generate(self, messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    def generate(self, messages: list[dict[str, Any]], metadata: dict | None = None) -> tuple[str, list[dict[str, Any]]]:
         compressed = self.compressor.compress_history(messages)
 
         kwargs: dict[str, Any] = {"model": self.model, "messages": compressed}
@@ -43,6 +50,8 @@ class LLM:
             kwargs["api_key"] = self.api_key
         if self.api_base:
             kwargs["api_base"] = self.api_base
+        if metadata:
+            kwargs["metadata"] = metadata
 
         response = litellm.completion(**kwargs)
         content = response.choices[0].message.content or ""

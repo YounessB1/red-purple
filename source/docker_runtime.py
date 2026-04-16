@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 import docker
 from docker.errors import DockerException, NotFound
@@ -8,6 +9,16 @@ from requests.exceptions import ConnectionError as RequestsConnectionError
 
 IMAGE_NAME = "redpurple:latest"
 BUILD_CONTEXT = Path(__file__).parents[1]  # repo root
+SOURCE_DIR = Path(__file__).parent         # source/ dir — where Dockerfile lives
+
+
+def _rewrite_localhost(url: str) -> str:
+    """Replace localhost/127.0.0.1 with host.docker.internal so the container can reach the host."""
+    parsed = urlparse(url)
+    if parsed.hostname in ("localhost", "127.0.0.1", "::1"):
+        netloc = parsed.netloc.replace(parsed.hostname, "host.docker.internal", 1)
+        url = urlunparse(parsed._replace(netloc=netloc))
+    return url
 
 
 class DockerRuntime:
@@ -31,6 +42,7 @@ class DockerRuntime:
         print(f"Building image {IMAGE_NAME}...")
         _, logs = self.client.images.build(
             path=str(BUILD_CONTEXT),
+            dockerfile=str(SOURCE_DIR / "Dockerfile"),
             tag=IMAGE_NAME,
             rm=True,
         )
@@ -40,7 +52,7 @@ class DockerRuntime:
                 print(f"  {line}")
         print("Image built.")
 
-    def create_sandbox(self, name: str, target: str = "", max_iter: int = 100) -> str:
+    def create_sandbox(self, name: str, target: str = "", max_iter: int = 100, task: str = "") -> str:
         container_name = f"redpurple-{name}"
 
         try:
@@ -57,16 +69,21 @@ class DockerRuntime:
             detach=True,
             name=container_name,
             cap_add=["NET_ADMIN", "NET_RAW"],
+            extra_hosts={"host.docker.internal": "host-gateway"},
             volumes={
-                str(BUILD_CONTEXT / "redpurple"): {"bind": "/app/redpurple", "mode": "ro"},
+                str(BUILD_CONTEXT / "source"): {"bind": "/app/source", "mode": "ro"},
                 str(runs_dir): {"bind": "/app/runs", "mode": "rw"},
             },
             environment={
                 "REDPURPLE_LLM": os.environ.get("REDPURPLE_LLM", ""),
                 "LLM_API_KEY": os.environ.get("LLM_API_KEY", ""),
                 "LLM_API_BASE": os.environ.get("LLM_API_BASE", ""),
-                "TARGET": target,
+                "TARGET": _rewrite_localhost(target),
                 "MAX_ITER": str(max_iter),
+                "TASK": task,
+                "LANGFUSE_PUBLIC_KEY": os.environ.get("LANGFUSE_PUBLIC_KEY", ""),
+                "LANGFUSE_SECRET_KEY": os.environ.get("LANGFUSE_SECRET_KEY", ""),
+                "LANGFUSE_HOST": os.environ.get("LANGFUSE_HOST", ""),
             },
         )
 
