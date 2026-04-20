@@ -1,3 +1,3 @@
-from source.agent.seed import main
+from source.agent.runner import run
 
-main()
+run()

@@ -1,0 +1,42 @@
+{
+  "reconnaissance": [
+    "nmap",
+    "nikto",
+    "gobuster",
+    "dirb",
+    "ffuf"
+  ],
+  "web_exploitation": [
+    "sqlmap",
+    "wfuzz"
+  ],
+  "network_tools": [
+    "netcat",
+    "proxychains4",
+    "socat",
+    "tcpdump"
+  ],
+  "credential_attacks": [
+    "hydra",
+    "john",
+    "sshpass"
+  ],
+  "privilege_escalation": [
+    "linpeas"
+  ],
+  "utilities": [
+    "curl",
+    "wget",
+    "git",
+    "jq",
+    "ripgrep",
+    "whois",
+    "dnsutils",
+    "net-tools"
+  ],
+  "wordlists": [
+    "/usr/share/wordlists/common.txt",
+    "/usr/share/wordlists/raft-medium-directories.txt",
+    "/usr/share/wordlists/top-10000-passwords.txt"
+  ]
+}

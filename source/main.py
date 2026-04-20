@@ -8,13 +8,13 @@ import subprocess
 import sys
 import time
 
-_COMPOSE_FILE = pathlib.Path(__file__).resolve().parent / "docker-compose.yml"
-_RUNS_DIR = pathlib.Path(__file__).resolve().parent.parent / "runs"
-
 import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_COMPOSE_FILE = pathlib.Path(__file__).resolve().parent / "agent" / "docker-compose.yml"
+_RUNS_DIR = pathlib.Path(__file__).resolve().parent.parent / "runs"
 
 SERVER_URL = "http://localhost:8000"
 
