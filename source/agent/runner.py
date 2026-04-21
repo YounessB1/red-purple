@@ -1,7 +1,15 @@
 """Agent runner — executes a seed module and traces the run.
 
-Accepts any seed module that exposes: TOOL_SCHEMAS, TOOLS, SYSTEM_PROMPT, DEFAULT_TASK.
+Accepts any seed module/namespace that exposes: TOOL_SCHEMAS, TOOLS, SYSTEM_PROMPT, DEFAULT_TASK.
 Defaults to source.agent.seed when no module is provided.
+
+Usage:
+    # From CLI / server (reads env vars)
+    from source.agent.runner import run
+    run()
+
+    # From optimize-anything (explicit params, returns metadata)
+    metadata = run(target="http://localhost:8080", run_id="exp1-bench42", seed=my_seed)
 """
 
 import os
@@ -16,21 +24,36 @@ from source.tracer import Tracer
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 
 
-def run(seed=None) -> None:
+def run(
+    target: str | None = None,
+    run_id: str | None = None,
+    seed=None,
+    max_iter: int | None = None,
+    task: str | None = None,
+    runs_dir: Path | None = None,
+) -> dict:
+    """Run the agent loop. Returns metadata dict.
+
+    All parameters are optional — when omitted, falls back to env vars
+    (TARGET, RUN_ID, MAX_ITER, TASK) for backward compatibility with
+    the container server.
+    """
     if seed is None:
         seed = default_seed
 
-    target   = os.environ.get("TARGET", "")
+    target = target or os.environ.get("TARGET", "")
     if not target:
         print("ERROR: TARGET not set.")
-        return
-    max_iter = int(os.environ.get("MAX_ITER", "100"))
-    task     = os.environ.get("TASK") or seed.DEFAULT_TASK.format(target=target)
-    run_id   = os.environ.get("RUN_ID") or f"run-{uuid4().hex[:8]}"
+        return {"success": False, "stop_reason": "error"}
+
+    max_iter = max_iter or int(os.environ.get("MAX_ITER", "100"))
+    run_id = run_id or os.environ.get("RUN_ID") or f"run-{uuid4().hex[:8]}"
+    task = task or os.environ.get("TASK") or seed.DEFAULT_TASK.format(target=target)
+    runs_dir = runs_dir or RUNS_DIR
 
     tracer = Tracer(run_id=run_id, target=target, task=task,
                     model=os.environ.get("REDPURPLE_LLM", ""),
-                    runs_dir=RUNS_DIR, max_iterations=max_iter)
+                    runs_dir=runs_dir, max_iterations=max_iter)
     llm = LLM(tracer=tracer)
 
     history = [
@@ -73,4 +96,6 @@ def run(seed=None) -> None:
         raise
     finally:
         tracer.set_stop_reason(stop_reason)
-        tracer.finish(history)
+        metadata = tracer.finish(history)
+
+    return metadata

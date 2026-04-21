@@ -1,6 +1,6 @@
 """Red-Purple Tracer — records every run and writes two output files:
-    runs/<run_id>/metadata.json      — stats, tokens, cost, success, flag
-    runs/<run_id>/context_window.json — full conversation history
+    experiments/<run_id>/metadata.json      — stats, tokens, cost, success, flag
+    experiments/<run_id>/context_window.json — full conversation history
 """
 
 import json

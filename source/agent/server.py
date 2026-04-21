@@ -26,7 +26,7 @@ def _rewrite_localhost(url: str) -> str:
 
 
 @app.post("/run")
-async def start_run(target: str, max_iter: int = 100, task: str = "") -> dict:
+async def start_run(target: str, max_iter: int = 100, task: str = "", seed_json: str = "") -> dict:
     run_id = f"run-{uuid4().hex[:8]}"
     target = _rewrite_localhost(target)
 
@@ -37,6 +37,8 @@ async def start_run(target: str, max_iter: int = 100, task: str = "") -> dict:
         "TASK": task,
         "RUN_ID": run_id,
     }
+    if seed_json:
+        env["SEED_OVERRIDE"] = seed_json
 
     proc = await asyncio.create_subprocess_exec(
         "python3", "-m", "source.agent",
