@@ -148,11 +148,4 @@ class Tracer:
             json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
-        print(f"[tracer] {'FLAG FOUND: ' + flag if flag else 'no flag'} | "
-              f"cost=${metadata['total_cost_usd']:.4f} | "
-              f"{len(self._llm_calls)} LLM calls | "
-              f"{len(self._tool_calls)} tool calls | "
-              f"{round(duration, 1)}s")
-        print(f"[tracer] run saved → {out_dir}")
-
         return metadata

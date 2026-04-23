@@ -6,7 +6,7 @@ authors = ["YounessB1"]
 packages = [{include = "source"}]
 
 [tool.poetry.scripts]
-red-purple = "source.main:main"
+red-purple = "main:main"
 
 [tool.poetry.dependencies]
 python = "^3.12"

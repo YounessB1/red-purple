@@ -31,6 +31,7 @@ def run(
     max_iter: int | None = None,
     task: str | None = None,
     runs_dir: Path | None = None,
+    model: str | None = None,
 ) -> dict:
     """Run the agent loop. Returns metadata dict.
 
@@ -52,9 +53,9 @@ def run(
     runs_dir = runs_dir or RUNS_DIR
 
     tracer = Tracer(run_id=run_id, target=target, task=task,
-                    model=os.environ.get("REDPURPLE_LLM", ""),
+                    model=model,
                     runs_dir=runs_dir, max_iterations=max_iter)
-    llm = LLM(tracer=tracer)
+    llm = LLM(model=model, tracer=tracer)
 
     history = [
         {"role": "system", "content": seed.SYSTEM_PROMPT.format(tools=seed.TOOL_SCHEMAS)},
@@ -80,9 +81,7 @@ def run(
 
             finished = False
             for call in calls:
-                print(f"[tool] {call['name']}({call['args']})")
                 result, should_finish = run_tool(call, tracer, seed.TOOLS)
-                print(f"[result] {result}\n")
                 history.append({"role": "user", "content": f"<tool_result>\n{result}\n</tool_result>"})
                 if should_finish:
                     stop_reason = "agent_finished"
@@ -97,5 +96,8 @@ def run(
     finally:
         tracer.set_stop_reason(stop_reason)
         metadata = tracer.finish(history)
+        flag = metadata.get("flag")
+        outcome = f"FLAG {flag}" if flag else f"no flag ({stop_reason})"
+        print(f"[red-purple] {run_id} done | {outcome}")
 
     return metadata

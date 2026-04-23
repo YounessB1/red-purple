@@ -10,23 +10,29 @@ litellm.drop_params = True
 
 
 class LLM:
-    def __init__(self, tracer=None) -> None:
-        self.model = os.environ.get("REDPURPLE_LLM")
-        if not self.model:
-            raise ValueError("REDPURPLE_LLM env var must be set (e.g. openrouter/openai/gpt-4o-mini)")
+    def __init__(self, model: str, tracer=None) -> None:
+        self.model = model
         self.api_key  = os.environ.get("LLM_API_KEY")
         self.api_base = os.environ.get("LLM_API_BASE")
         self.tracer = tracer
 
-    def generate(self, messages: list[dict[str, Any]]) -> str:
-        kwargs: dict[str, Any] = {"model": self.model, "messages": messages}
+    def generate(self, messages: list[dict[str, Any]], max_retries: int = 3) -> str:
+        kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0}
         if self.api_key:
             kwargs["api_key"] = self.api_key
         if self.api_base:
             kwargs["api_base"] = self.api_base
 
         t0 = time.perf_counter()
-        response = litellm.completion(**kwargs)
+        for attempt in range(max_retries):
+            try:
+                response = litellm.completion(**kwargs)
+                break
+            except (litellm.exceptions.APIError, litellm.exceptions.APIConnectionError) as e:
+                if attempt == max_retries - 1:
+                    raise
+                wait = 2 ** attempt
+                time.sleep(wait)
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
         content       = response.choices[0].message.content or ""

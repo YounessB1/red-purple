@@ -10,10 +10,12 @@ import gepa.optimize_anything as oa
 from source.agent.runner import run as run_agent
 from source.agent.seed import TOOL_SCHEMAS, TOOLS
 from source.benchmark import start_benchmark, stop_benchmark
+from source.optimize_anything import cache
 
-# Set by __main__.py before optimization starts
+# Set by core_loop before optimization starts
 EXPERIMENT_DIR: Path | None = None
 AGENT_MAX_ITER: int = 50
+AGENT_MODEL: str = ""
 
 # Iteration tracking — each unique candidate hash = one GEPA iteration
 _seen_candidates: dict[str, int] = {}
@@ -45,28 +47,29 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
     run_id = bench_id
 
     # experiments/experimentN/iteration_001/XBEN-xxx-24/
-    if EXPERIMENT_DIR:
-        runs_dir = EXPERIMENT_DIR / f"iteration_{iteration:03d}"
-    else:
-        runs_dir = Path("experiments") / f"iteration_{iteration:03d}"
+    base_dir = EXPERIMENT_DIR or Path("experiments")
+    runs_dir = base_dir / f"iteration_{iteration:03d}"
+    run_dir = runs_dir / run_id
+
+    cached = cache.try_load(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
+    if cached is not None:
+        return cached
 
     port = start_benchmark(bench_id)
-
     try:
-        seed = _make_seed(candidate)
-
         metadata = run_agent(
             target=f"http://localhost:{port}",
             run_id=run_id,
-            seed=seed,
+            seed=_make_seed(candidate),
             max_iter=AGENT_MAX_ITER,
             runs_dir=runs_dir,
+            model=AGENT_MODEL,
         )
 
         score = 1.0 if metadata["success"] else 0.0
 
         # Feed the full context window to GEPA's reflection LLM
-        context_path = runs_dir / run_id / "context_window.json"
+        context_path = run_dir / "context_window.json"
         if context_path.exists():
             context_window = context_path.read_text(encoding="utf-8")
             oa.log(f"Benchmark: {bench_id} | Success: {metadata['success']}\n\nContext window:\n{context_window}")
@@ -81,6 +84,7 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
             "cost_usd": metadata["total_cost_usd"],
         }
 
+        cache.try_save(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, score, side_info, run_dir)
         return score, side_info
 
     finally:
@@ -98,6 +102,6 @@ def _make_seed(candidate: dict[str, str]) -> SimpleNamespace:
 
 
 def _candidate_hash(candidate: dict[str, str]) -> str:
-    """Short hash of candidate for unique run IDs."""
+    """SHA-256 hash of candidate for unique run IDs."""
     raw = json.dumps(candidate, sort_keys=True)
-    return hashlib.sha256(raw.encode()).hexdigest()[:8]
+    return hashlib.sha256(raw.encode()).hexdigest()

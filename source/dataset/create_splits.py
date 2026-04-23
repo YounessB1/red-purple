@@ -5,11 +5,11 @@ Stratification is by difficulty × primary vulnerability type, using a fixed
 random seed. Metadata is read from each benchmark's benchmark.json (field "level"
 for difficulty, first entry of "tags" for vulnerability type).
 
-Split target: ~60% train / ~20% val / ~20% test
+Split target: ~70-75% train / ~10% val / ~20% test
   Singletons  (n=1):  1 / 0 / 0  → all to train
-  Pairs       (n=2):  1 / 1 / 0  → train + val
-  Triples     (n=3):  1 / 1 / 1  → one each
-  n≥4               : proportional (round 60% train, round 20% val, rest test)
+  Pairs       (n=2):  2 / 0 / 0  → all to train
+  Triples     (n=3):  2 / 0 / 1  → train + test only
+  n≥4               : 1 val, ~20% test, rest train
 
 Usage:
     python3 source/dataset/create_splits.py
@@ -42,17 +42,14 @@ def _alloc(n: int) -> tuple[int, int, int]:
         warnings.warn("Stratum of size 1 — assigning to train.")
         return (1, 0, 0)
     if n == 2:
-        warnings.warn("Stratum of size 2 — assigning to train + val, no test.")
-        return (1, 1, 0)
+        warnings.warn("Stratum of size 2 — assigning both to train.")
+        return (2, 0, 0)
     if n == 3:
-        return (1, 1, 1)
-    # n >= 4: proportional, guarantee at least 1 in test
-    n_tr = round(n * 0.60)
-    n_va = round(n * 0.20)
-    n_te = n - n_tr - n_va
-    if n_te < 1:
-        n_va -= 1
-        n_te = 1
+        return (2, 0, 1)
+    # n >= 4: exactly 1 val, ~20% test, rest train
+    n_va = 1
+    n_te = max(1, round(n * 0.20))
+    n_tr = n - n_va - n_te
     return (n_tr, n_va, n_te)
 
 

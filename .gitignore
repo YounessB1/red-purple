@@ -4,3 +4,8 @@ __pycache__/
 *.pyo
 .env
 experiments/
+.codex
+lowe_api_implementation.md
+OA_INSTRUCTION.md
+todo.txt
+tracing_plan.md
