@@ -7,19 +7,14 @@ import re
 import shutil
 from pathlib import Path
 
-from gepa.optimize_anything import (
-    optimize_anything,
-    GEPAConfig,
-    EngineConfig,
-    ReflectionConfig,
-    RefinerConfig,
-    TrackingConfig,
-)
+from gepa import optimize
 from gepa.strategies.eval_policy import FullEvaluationPolicy
 
-from source.agent.seed import SYSTEM_PROMPT, DEFAULT_TASK
-from source.optimize_anything.dataset import load_dataset
 from source.optimize_anything import cache, evaluator
+from source.optimize_anything.adapter import RedPurpleAdapter
+from source.optimize_anything.callbacks import TracingCallback
+from source.optimize_anything.dataset import load_dataset
+from source.agent.seed import PROMPT
 
 
 class SubsetValPolicy(FullEvaluationPolicy):
@@ -48,54 +43,10 @@ def _next_experiment_dir(base: Path) -> Path:
     return base / f"experiment{n}"
 
 
-# ── Component config builders ──────────────────────────────────────────
-
-def _build_engine_config(
-    max_calls: int,
-    workers: int,
-    run_dir: Path,
-    val_minibatch_size: int | None,
-) -> EngineConfig:
-    kwargs: dict = {
-        "max_metric_calls": max_calls,
-        "run_dir": str(run_dir),
-        "parallel": workers > 1,
-        "max_workers": workers,
+def _build_seed_candidate() -> dict[str, str]:
+    return {
+        "prompt": PROMPT,
     }
-    if val_minibatch_size is not None:
-        kwargs["val_evaluation_policy"] = SubsetValPolicy(k=val_minibatch_size)
-    return EngineConfig(**kwargs)
-
-
-def _build_reflection_config(
-    reflection_lm: str | None,
-    train_minibatch_size: int | None,
-) -> ReflectionConfig:
-    kwargs: dict = {}
-    if reflection_lm:
-        kwargs["reflection_lm"] = reflection_lm
-    if train_minibatch_size is not None:
-        kwargs["reflection_minibatch_size"] = train_minibatch_size
-    return ReflectionConfig(**kwargs)
-
-
-def _build_refiner_config(refiner_lm: str | None) -> RefinerConfig | None:
-    if not refiner_lm:
-        return None
-    return RefinerConfig(refiner_lm=refiner_lm)
-
-
-def _build_tracking_config(use_wandb: bool, run_name: str) -> TrackingConfig:
-    if not use_wandb:
-        return TrackingConfig()
-    wandb_api_key = os.environ.get("WANDB_API_KEY")
-    if not wandb_api_key:
-        raise ValueError("use_wandb=True but WANDB_API_KEY is not set in .env")
-    return TrackingConfig(
-        use_wandb=True,
-        wandb_api_key=wandb_api_key,
-        wandb_init_kwargs={"name": run_name},
-    )
 
 
 # ── Main entry point ───────────────────────────────────────────────────
@@ -106,10 +57,8 @@ def run(
     workers: int,
     agent_max_iter: int,
     agent_model: str,
-    background: str,
     config_path: Path,
     reflection_lm: str | None,
-    refiner_lm: str | None = None,
     use_wandb: bool = False,
     train_minibatch_size: int | None = None,
     val_minibatch_size: int | None = None,
@@ -124,9 +73,11 @@ def run(
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
     # Configure evaluator + cache module state
-    evaluator.EXPERIMENT_DIR = experiment_dir
-    evaluator.AGENT_MAX_ITER = agent_max_iter
-    evaluator.AGENT_MODEL = agent_model
+    evaluator.configure_runtime(
+        experiment_dir=experiment_dir,
+        agent_max_iter=agent_max_iter,
+        agent_model=agent_model,
+    )
     cache.CACHE_DIR = experiments_dir / ".eval_cache"
 
     # Load dataset
@@ -135,44 +86,42 @@ def run(
     # Copy config.json into experiment dir for reproducibility
     shutil.copy2(config_path, experiment_dir / "config.json")
 
-    # Build GEPA config
-    gepa_config = GEPAConfig(
-        engine=_build_engine_config(
-            max_calls=max_calls,
-            workers=workers,
-            run_dir=experiment_dir / "oa_state",
-            val_minibatch_size=val_minibatch_size,
-        ),
-        reflection=_build_reflection_config(
-            reflection_lm=reflection_lm,
-            train_minibatch_size=train_minibatch_size,
-        ),
-        tracking=_build_tracking_config(
-            use_wandb=use_wandb,
-            run_name=experiment_dir.name,
-        ),
-        refiner=_build_refiner_config(refiner_lm),
-        merge=None,           # None to disable (default)
-        stop_callbacks=None,  # custom stopping logic
-    )
+    adapter = RedPurpleAdapter(workers=workers)
+    callbacks = [TracingCallback(log_dir=experiment_dir / "reflection_logs")]
 
     print(f"[red-purple] Experiment: {experiment_dir.name}")
     print(f"[red-purple] Train: {len(train)} benchmarks, Val: {len(val)} benchmarks")
     print(f"[red-purple] Budget: {max_calls} calls, {workers} workers")
     print(f"[red-purple] Output: {experiment_dir}\n")
 
-    # Run GEPA optimization
-    result = optimize_anything(
-        seed_candidate={
-            "system_prompt": SYSTEM_PROMPT,
-            "default_task": DEFAULT_TASK,
-        },
-        evaluator=evaluator.evaluate,
-        dataset=train,
+    wandb_kwargs = {}
+    if use_wandb:
+        wandb_api_key = os.environ.get("WANDB_API_KEY")
+        if not wandb_api_key:
+            raise ValueError("use_wandb=True but WANDB_API_KEY is not set in .env")
+        wandb_kwargs = {
+            "use_wandb": True,
+            "wandb_api_key": wandb_api_key,
+            "wandb_init_kwargs": {"name": experiment_dir.name},
+        }
+
+    result = optimize(
+        seed_candidate=_build_seed_candidate(),
+        trainset=train,
         valset=val,
-        objective="Maximize CTF flag capture rate across diverse web vulnerability types and difficulty levels",
-        background=background,
-        config=gepa_config,
+        adapter=adapter,
+        reflection_lm=reflection_lm,
+        reflection_minibatch_size=train_minibatch_size,
+        max_metric_calls=max_calls,
+        run_dir=str(experiment_dir / "oa_state"),
+        callbacks=callbacks,
+        val_evaluation_policy=(
+            SubsetValPolicy(k=val_minibatch_size) if val_minibatch_size is not None else "full_eval"
+        ),
+        skip_perfect_score=False,
+        use_cloudpickle=True,
+        seed=0,
+        **wandb_kwargs,
     )
 
     # Save best candidate

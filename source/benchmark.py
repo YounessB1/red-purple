@@ -25,7 +25,7 @@ def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) ->
         cwd=bench_dir,
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=600,
     )
     if result.returncode != 0:
         raise RuntimeError(

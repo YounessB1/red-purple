@@ -1,6 +1,6 @@
 """Agent runner — executes a seed module and traces the run.
 
-Accepts any seed module/namespace that exposes: TOOL_SCHEMAS, TOOLS, SYSTEM_PROMPT, DEFAULT_TASK.
+Accepts any seed module/namespace that exposes: TOOL_SCHEMAS, TOOLS, PROMPT.
 Defaults to source.agent.seed when no module is provided.
 
 Usage:
@@ -49,17 +49,17 @@ def run(
 
     max_iter = max_iter or int(os.environ.get("MAX_ITER", "100"))
     run_id = run_id or os.environ.get("RUN_ID") or f"run-{uuid4().hex[:8]}"
-    task = task or os.environ.get("TASK") or seed.DEFAULT_TASK.format(target=target)
+    task_override = task or os.environ.get("TASK", "")
+    prompt = _build_prompt(seed=seed, target=target, task_override=task_override)
     runs_dir = runs_dir or RUNS_DIR
 
-    tracer = Tracer(run_id=run_id, target=target, task=task,
+    tracer = Tracer(run_id=run_id, target=target, task=prompt,
                     model=model,
                     runs_dir=runs_dir, max_iterations=max_iter)
     llm = LLM(model=model, tracer=tracer)
 
     history = [
-        {"role": "system", "content": seed.SYSTEM_PROMPT.format(tools=seed.TOOL_SCHEMAS)},
-        {"role": "user",   "content": task},
+        {"role": "system", "content": prompt},
     ]
 
     print(f"[red-purple] {run_id} | {target}\n")
@@ -95,9 +95,28 @@ def run(
         raise
     finally:
         tracer.set_stop_reason(stop_reason)
-        metadata = tracer.finish(history)
+        metadata, context_window = tracer.finish(history)
         flag = metadata.get("flag")
         outcome = f"FLAG {flag}" if flag else f"no flag ({stop_reason})"
         print(f"[red-purple] {run_id} done | {outcome}")
 
-    return metadata
+    return metadata, context_window
+
+
+def _build_prompt(seed, target: str, task_override: str) -> str:
+    """Format the single prompt sent to the agent model."""
+    if hasattr(seed, "PROMPT"):
+        prompt_template = seed.PROMPT
+    else:
+        # Backward compatibility during migration from two prompt components.
+        prompt_template = f"{seed.SYSTEM_PROMPT}\n\n{seed.DEFAULT_TASK}"
+
+    tool_str = str(seed.TOOL_SCHEMAS)
+    prompt = prompt_template.replace("{target}", target)
+    if "{tools}" in prompt:
+        prompt = prompt.replace("{tools}", tool_str)
+    else:
+        prompt = f"{prompt}\n\n# TOOLS\n{tool_str}"
+    if task_override:
+        prompt = f"{prompt}\n\n# TASK OVERRIDE\n{task_override}"
+    return prompt

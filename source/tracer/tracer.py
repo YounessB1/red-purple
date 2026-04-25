@@ -148,4 +148,4 @@ class Tracer:
             json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
-        return metadata
+        return metadata, history

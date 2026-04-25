@@ -11,15 +11,13 @@ import json
 import shutil
 from pathlib import Path
 
-import gepa.optimize_anything as oa
-
-from source.agent.seed import DEFAULT_TASK, SYSTEM_PROMPT
+from source.agent.seed import PROMPT
 
 # Set by core_loop before optimization starts
 CACHE_DIR: Path | None = None
 
 # Only seed-candidate evals are cached.
-_SEED_CANDIDATE = {"system_prompt": SYSTEM_PROMPT, "default_task": DEFAULT_TASK}
+_SEED_CANDIDATE = {"prompt": PROMPT}
 SEED_CANDIDATE_HASH = hashlib.sha256(
     json.dumps(_SEED_CANDIDATE, sort_keys=True).encode()
 ).hexdigest()
@@ -34,8 +32,8 @@ def try_load(
 ) -> tuple[float, dict] | None:
     """Return cached (score, side_info) on a seed-candidate cache hit, else None.
 
-    On hit: restores the cached run artifacts into `run_dir` and re-emits the
-    context window to GEPA's reflection log, so the cached eval is
+    On hit: restores the cached run artifacts into `run_dir` and repopulates
+    `side_info["log"]` from the saved context window, so the cached eval is
     indistinguishable from a fresh one from GEPA's perspective.
     """
     if not _cacheable(candidate_hash):
@@ -46,11 +44,11 @@ def try_load(
         return None
 
     data = json.loads(result_file.read_text(encoding="utf-8"))
-    score, side_info = data["score"], data["side_info"]
+    score = data["score"]
+    side_info = dict(data["side_info"])
 
     _restore_artifacts(key, run_dir)
-    _log_context_window(run_dir, bench_id, side_info["success"])
-    print(f"[eval] {bench_id} — cache hit (score={score})")
+    _attach_context_log(side_info, run_dir)
     return score, side_info
 
 
@@ -99,8 +97,10 @@ def _restore_artifacts(key: str, target_dir: Path) -> None:
             shutil.copy2(item, target_dir / item.name)
 
 
-def _log_context_window(run_dir: Path, bench_id: str, success: bool) -> None:
+def _attach_context_log(side_info: dict, run_dir: Path) -> None:
     context_path = run_dir / "context_window.json"
     if context_path.exists():
-        ctx = context_path.read_text(encoding="utf-8")
-        oa.log(f"Benchmark: {bench_id} | Success: {success}\n\nContext window:\n{ctx}")
+        try:
+            side_info["context_window"] = json.loads(context_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            side_info["context_window"] = []

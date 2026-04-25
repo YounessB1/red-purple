@@ -12,7 +12,7 @@ litellm.drop_params = True
 class LLM:
     def __init__(self, model: str, tracer=None) -> None:
         self.model = model
-        self.api_key  = os.environ.get("LLM_API_KEY")
+        self.api_key  = os.environ.get("OPENROUTER_API_KEY")
         self.api_base = os.environ.get("LLM_API_BASE")
         self.tracer = tracer
 
@@ -28,7 +28,7 @@ class LLM:
             try:
                 response = litellm.completion(**kwargs)
                 break
-            except (litellm.exceptions.APIError, litellm.exceptions.APIConnectionError) as e:
+            except (litellm.exceptions.APIError, litellm.exceptions.APIConnectionError):
                 if attempt == max_retries - 1:
                     raise
                 wait = 2 ** attempt

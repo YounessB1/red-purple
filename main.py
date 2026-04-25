@@ -38,10 +38,8 @@ def main():
         agent_model=cfg["agent_model"],
         train_minibatch_size=cfg.get("train_minibatch_size"),
         val_minibatch_size=cfg.get("val_minibatch_size"),
-        background=cfg["background_context"],
         config_path=CONFIG_PATH,
         reflection_lm=cfg.get("reflection_lm"),
-        refiner_lm=cfg.get("refiner_lm"),
         use_wandb=cfg.get("use_wandb", False),
     )
 
