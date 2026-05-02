@@ -57,12 +57,33 @@ def force_stop_all(benchmarks_dir: Path = BENCHMARKS_DIR) -> None:
     Spawns detached `docker compose down` processes that survive the Python
     process exiting. Used from the SIGINT handler to recover the terminal
     instantly without waiting for stuck worker threads.
+
+    Queries docker ps directly instead of relying on _active_benchmarks to
+    avoid a race condition where threads start containers after the set is cleared.
     """
-    for benchmark_id in list(_active_benchmarks):
+    result = subprocess.run(
+        ["docker", "ps", "--format", "{{.Names}}"],
+        capture_output=True, text=True,
+    )
+    running_names = result.stdout.strip().splitlines()
+
+    # Collect every benchmark_id whose containers are still up
+    to_stop: set[str] = set(_active_benchmarks)
+    for name in running_names:
+        # Container names look like "xben-054-24-web-1" — reconstruct benchmark_id
+        m = re.match(r"(xben-\d+-\d+)-", name)
+        if m:
+            bench_id = m.group(1).upper()  # "XBEN-054-24"
+            to_stop.add(bench_id)
+
+    for benchmark_id in to_stop:
+        bench_dir = benchmarks_dir / benchmark_id
+        if not bench_dir.is_dir():
+            continue
         try:
             subprocess.Popen(
                 ["docker", "compose", "down", "--remove-orphans"],
-                cwd=benchmarks_dir / benchmark_id,
+                cwd=bench_dir,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,

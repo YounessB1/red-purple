@@ -1,17 +1,22 @@
-"""Red-Purple — agent server. Spawns an agent process per run and returns artifacts when done."""
+"""Red-Purple — agent server."""
 
 import asyncio
 import json
-import os
-from pathlib import Path
+import threading
 from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
-from fastapi import FastAPI
+import traceback
+
+from fastapi import FastAPI, HTTPException
+
+from source.agent.runner import run
 
 app = FastAPI()
 
-_RUNS_DIR = Path("/app/runs")
+_cancel_event = threading.Event()
+_active_runs = 0
+_runs_lock = threading.Lock()
 
 
 def _rewrite_localhost(url: str) -> str:
@@ -22,40 +27,33 @@ def _rewrite_localhost(url: str) -> str:
     return url
 
 
+@app.post("/cancel")
+async def cancel_endpoint() -> dict:
+    _cancel_event.set()
+    return {"status": "cancelling"}
+
+
 @app.post("/run")
-async def run_agent(target: str, max_iter: int = 100, seed_json: str = "", model: str = "") -> dict:
-    run_id = f"run-{uuid4().hex[:8]}"
+async def run_endpoint(target: str, max_iter: int = 100, seed_json: str = "", model: str = "") -> dict:
+    global _active_runs
     target = _rewrite_localhost(target)
+    run_id = f"run-{uuid4().hex[:8]}"
+    prompt = json.loads(seed_json).get("prompt") if seed_json else None
 
-    env = {**os.environ, "TARGET": target, "MAX_ITER": str(max_iter), "RUN_ID": run_id}
-    if seed_json:
-        env["SEED_OVERRIDE"] = seed_json
-    if model:
-        env["MODEL"] = model
+    with _runs_lock:
+        if _active_runs == 0:
+            _cancel_event.clear()
+        _active_runs += 1
 
-    proc = await asyncio.create_subprocess_exec(
-        "python3", "-m", "source.agent",
-        env=env,
-        cwd="/app",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    stdout, _ = await proc.communicate()
-
-    run_dir = _RUNS_DIR / run_id
+    loop = asyncio.get_event_loop()
     try:
-        metadata = json.loads((run_dir / "metadata.json").read_text())
-        context_window = json.loads((run_dir / "context_window.json").read_text())
-    except FileNotFoundError:
-        metadata = {
-            "run_id": run_id,
-            "success": False,
-            "flag": None,
-            "stop_reason": "error",
-            "iterations_used": 0,
-            "_exit_code": proc.returncode,
-            "_server_logs": stdout.decode(errors="replace")[-3000:],
-        }
-        context_window = []
+        metadata, context_window = await loop.run_in_executor(
+            None, lambda: run(target=target, run_id=run_id, max_iter=max_iter, model=model, prompt=prompt, cancel_event=_cancel_event)
+        )
+    except Exception:
+        raise HTTPException(status_code=500, detail=traceback.format_exc())
+    finally:
+        with _runs_lock:
+            _active_runs -= 1
 
     return {"metadata": metadata, "context_window": context_window}

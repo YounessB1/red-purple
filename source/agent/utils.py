@@ -6,8 +6,6 @@ import re
 import time
 from typing import Any
 
-from source.tracer import Tracer
-
 
 def parse_tool_calls(content: str) -> list[dict[str, Any]]:
     """Parse <invoke name="...">...</invoke> blocks from LLM response."""
@@ -26,21 +24,16 @@ def parse_tool_calls(content: str) -> list[dict[str, Any]]:
     return calls
 
 
-def run_tool(call: dict, tracer: Tracer, tools: dict[str, Any]) -> tuple[str, bool]:
-    """Dispatch a single tool call and return (json_output, should_finish)."""
+def run_tool(call: dict, tools: dict[str, Any]) -> tuple[str, bool, float]:
+    """Dispatch a single tool call and return (json_output, should_finish, latency_ms)."""
     func = tools.get(call["name"])
     if not func:
-        err = json.dumps({"error": f"Unknown tool: {call['name']}"})
-        tracer.log_tool_call(call["name"], call["args"], 0.0)
-        return err, False
+        return json.dumps({"error": f"Unknown tool: {call['name']}"}), False, 0.0
     try:
         t0 = time.perf_counter()
         result = func(**call["args"])
         latency_ms = (time.perf_counter() - t0) * 1000.0
         should_finish = bool(result.get("should_finish", False)) if isinstance(result, dict) else False
-        output = json.dumps(result, indent=2)
-        tracer.log_tool_call(call["name"], call["args"], latency_ms)
-        return output, should_finish
+        return json.dumps(result, indent=2), should_finish, latency_ms
     except Exception as e:
-        tracer.log_tool_call(call["name"], call["args"], 0.0)
-        return json.dumps({"error": str(e)}), False
+        return json.dumps({"error": str(e)}), False, 0.0

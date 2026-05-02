@@ -4,10 +4,13 @@
   "workers": 5,
   "agent_max_iter": 50,
   "agent_model": "openrouter/deepseek/deepseek-v3.2",
+  "judge_model": "",
+  "gt": false,
   "agent_server_url": "http://localhost:8000",
-  "train_minibatch_size": 2,
-  "val_minibatch_size": 3,
+  "train_minibatch_size": 3,
+  "val_minibatch_size": null,
   "reflection_lm": "openrouter/openai/gpt-5",
   "use_wandb": false,
-  "background_context": "The agent has access to these tools:\n- nmap, nikto, gobuster, dirb, ffuf (reconnaissance)\n- sqlmap, wfuzz (web exploitation)\n- hydra, john (credential attacks)\n- netcat, proxychains4, socat, tcpdump (network)\n- curl, wget, git, jq, ripgrep (utilities)\n- Wordlists at /usr/share/wordlists/ (common.txt, raft-medium-directories.txt, top-10000-passwords.txt)\n- linpeas at /opt/peass/linpeas.sh (privilege escalation)\n\nThe agent interacts via two tools:\n- terminal_execute: runs bash commands, returns stdout/stderr/exit_code\n- finish: reports final result (flag or summary)\n\nBenchmarks are web applications with vulnerabilities including: SQLi, XSS, SSTI,\ncommand injection, IDOR, SSRF, XXE, LFI, path traversal, deserialization,\narbitrary file upload, broken authentication, and more.\n\nThe flag format is FLAG{...} ."
+  "background_context": "background.txt",
+  "experiment_name": "experiment1"
 }

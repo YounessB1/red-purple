@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-_FLAG_RE = re.compile(r'[Ff][Ll][Aa][Gg]\{[^}]+\}')
+_FLAG_RE = re.compile(r'[Ff][Ll][Aa][Gg]\{[0-9a-f]{64}\}')
 
 _PRICES_PATH = Path(__file__).parent / "model_prices.json"
 
@@ -137,15 +137,5 @@ class Tracer:
             "context_messages":     len(history),
 
         }
-
-        out_dir = self.runs_dir / self.run_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        (out_dir / "metadata.json").write_text(
-            json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-        (out_dir / "context_window.json").write_text(
-            json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
 
         return metadata, history

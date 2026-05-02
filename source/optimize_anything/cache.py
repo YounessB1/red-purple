@@ -2,8 +2,8 @@
 candidates are unique to their run.
 
 Key = SHA-256 of (candidate_hash, bench_id, model, max_iter). Entries store
-(score, side_info) plus the run artifacts (metadata.json + context_window.json)
-so replays look identical to a fresh run. Shared across experiments.
+only the raw run artifacts (metadata.json + context_window.json). The score is
+always recomputed from the artifacts so changing the judge never stales the cache.
 """
 
 import hashlib
@@ -11,7 +11,7 @@ import json
 import shutil
 from pathlib import Path
 
-from source.agent.seed import PROMPT
+from source.seed import PROMPT
 
 # Set by core_loop before optimization starts
 CACHE_DIR: Path | None = None
@@ -29,27 +29,25 @@ def try_load(
     model: str,
     max_iter: int,
     run_dir: Path,
-) -> tuple[float, dict] | None:
-    """Return cached (score, side_info) on a seed-candidate cache hit, else None.
+) -> tuple[dict, list] | None:
+    """Return cached (metadata, context_window) on a seed-candidate cache hit, else None.
 
-    On hit: restores the cached run artifacts into `run_dir` and repopulates
-    `side_info["log"]` from the saved context window, so the cached eval is
-    indistinguishable from a fresh one from GEPA's perspective.
+    On hit: restores the cached run artifacts into `run_dir`. Score is NOT cached
+    so the caller always recomputes it with the current judge configuration.
     """
     if not _cacheable(candidate_hash):
         return None
     key = _make_key(candidate_hash, bench_id, model, max_iter)
-    result_file = CACHE_DIR / key / "result.json"
-    if not result_file.exists():
+    artifacts_dir = CACHE_DIR / key / bench_id
+    metadata_file = artifacts_dir / "metadata.json"
+    context_file = artifacts_dir / "context_window.json"
+    if not metadata_file.exists() or not context_file.exists():
         return None
 
-    data = json.loads(result_file.read_text(encoding="utf-8"))
-    score = data["score"]
-    side_info = dict(data["side_info"])
-
-    _restore_artifacts(key, run_dir)
-    _attach_context_log(side_info, run_dir)
-    return score, side_info
+    metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+    context_window = json.loads(context_file.read_text(encoding="utf-8"))
+    _restore_artifacts(key, bench_id, run_dir)
+    return metadata, context_window
 
 
 def try_save(
@@ -57,21 +55,15 @@ def try_save(
     bench_id: str,
     model: str,
     max_iter: int,
-    score: float,
-    side_info: dict,
     run_dir: Path,
 ) -> None:
-    """Save (score, side_info) + run artifacts, but only for the seed candidate."""
+    """Save run artifacts (metadata + context_window), but only for the seed candidate."""
     if not _cacheable(candidate_hash):
         return
     key = _make_key(candidate_hash, bench_id, model, max_iter)
     entry_dir = CACHE_DIR / key
     entry_dir.mkdir(parents=True, exist_ok=True)
-    (entry_dir / "result.json").write_text(
-        json.dumps({"score": score, "side_info": side_info}, indent=2),
-        encoding="utf-8",
-    )
-    artifacts_dir = entry_dir / "run"
+    artifacts_dir = entry_dir / bench_id
     if artifacts_dir.exists():
         shutil.rmtree(artifacts_dir)
     if run_dir.exists():
@@ -89,18 +81,9 @@ def _make_key(candidate_hash: str, bench_id: str, model: str, max_iter: int) -> 
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _restore_artifacts(key: str, target_dir: Path) -> None:
-    source_dir = CACHE_DIR / key / "run"
+def _restore_artifacts(key: str, bench_id: str, target_dir: Path) -> None:
+    source_dir = CACHE_DIR / key / bench_id
     if source_dir.exists():
         target_dir.mkdir(parents=True, exist_ok=True)
         for item in source_dir.iterdir():
             shutil.copy2(item, target_dir / item.name)
-
-
-def _attach_context_log(side_info: dict, run_dir: Path) -> None:
-    context_path = run_dir / "context_window.json"
-    if context_path.exists():
-        try:
-            side_info["context_window"] = json.loads(context_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            side_info["context_window"] = []

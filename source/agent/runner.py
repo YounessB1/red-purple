@@ -1,56 +1,36 @@
 """Agent runner — executes a seed module and traces the run.
 
 Accepts any seed module/namespace that exposes: TOOL_SCHEMAS, TOOLS, PROMPT.
-Defaults to source.agent.seed when no module is provided.
-
-Usage:
-    # From CLI / server (reads env vars)
-    from source.agent.runner import run
-    run()
-
-    # From optimize-anything (explicit params, returns metadata)
-    metadata = run(target="http://localhost:8080", run_id="exp1-bench42", seed=my_seed)
+Defaults to source.agent.seed when no seed is provided.
 """
 
-import os
+import threading
 from pathlib import Path
 from uuid import uuid4
+from tqdm import tqdm
 
-from source.agent import seed as default_seed
+from source import seed as default_seed
+from source.agent import tools as agent_tools
 from source.llm import LLM
 from source.agent.utils import parse_tool_calls, run_tool
+from source.agent import compactor, extractor
 from source.tracer import Tracer
 
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 
 
 def run(
-    target: str | None = None,
+    target: str,
+    model: str,
     run_id: str | None = None,
-    seed=None,
-    max_iter: int | None = None,
-    task: str | None = None,
+    prompt: str | None = None,
+    max_iter: int = 50,
     runs_dir: Path | None = None,
-    model: str | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
-    """Run the agent loop. Returns metadata dict.
-
-    All parameters are optional — when omitted, falls back to env vars
-    (TARGET, RUN_ID, MAX_ITER, TASK) for backward compatibility with
-    the container server.
-    """
-    if seed is None:
-        seed = default_seed
-
-    target = target or os.environ.get("TARGET", "")
-    if not target:
-        print("ERROR: TARGET not set.")
-        return {"success": False, "stop_reason": "error"}
-
-    max_iter = max_iter or int(os.environ.get("MAX_ITER", "100"))
-    run_id = run_id or os.environ.get("RUN_ID") or f"run-{uuid4().hex[:8]}"
-    task_override = task or os.environ.get("TASK", "")
-    prompt = _build_prompt(seed=seed, target=target, task_override=task_override)
+    """Run the agent loop. Returns (metadata, context_window)."""
+    run_id = run_id or f"run-{uuid4().hex[:8]}"
+    prompt = (prompt or default_seed.PROMPT).replace("{target}", target) + agent_tools.TOOLS_PROMPT
     runs_dir = runs_dir or RUNS_DIR
 
     tracer = Tracer(run_id=run_id, target=target, task=prompt,
@@ -66,8 +46,19 @@ def run(
 
     stop_reason = "unknown"
     try:
-        for iteration in range(1, max_iter + 1):
-            content = llm.generate(history)
+        for iteration in tqdm(range(1, max_iter + 1), desc=run_id, unit="iter", leave=False):
+            if cancel_event and cancel_event.is_set():
+                stop_reason = "cancelled"
+                break
+            if compactor.should_compact(history, model):
+                history = compactor.compact(history, model, tracer=tracer)
+            try:
+                content = llm.generate(history)
+            except Exception as e:
+                stop_reason = f"llm_error: {type(e).__name__}"
+                history.append({"role": "user", "content": f"<error>\n{e}\n</error>"})
+                print(f"[red-purple] {run_id} | stopping: {stop_reason}", flush=True)
+                break
             calls = parse_tool_calls(content)
             history.append({"role": "assistant", "content": content})
 
@@ -81,7 +72,9 @@ def run(
 
             finished = False
             for call in calls:
-                result, should_finish = run_tool(call, tracer, seed.TOOLS)
+                result, should_finish, latency_ms = run_tool(call, agent_tools.TOOLS)
+                tracer.log_tool_call(call["name"], call["args"], latency_ms)
+                result = extractor.extract(result, model=model, tracer=tracer)
                 history.append({"role": "user", "content": f"<tool_result>\n{result}\n</tool_result>"})
                 if should_finish:
                     stop_reason = "agent_finished"
@@ -90,9 +83,10 @@ def run(
 
             if finished:
                 break
-    except Exception:
-        stop_reason = "error"
-        raise
+    except Exception as e:
+        if stop_reason == "unknown":
+            stop_reason = f"error: {type(e).__name__}"
+        import traceback; traceback.print_exc()
     finally:
         tracer.set_stop_reason(stop_reason)
         metadata, context_window = tracer.finish(history)
@@ -101,22 +95,3 @@ def run(
         print(f"[red-purple] {run_id} done | {outcome}")
 
     return metadata, context_window
-
-
-def _build_prompt(seed, target: str, task_override: str) -> str:
-    """Format the single prompt sent to the agent model."""
-    if hasattr(seed, "PROMPT"):
-        prompt_template = seed.PROMPT
-    else:
-        # Backward compatibility during migration from two prompt components.
-        prompt_template = f"{seed.SYSTEM_PROMPT}\n\n{seed.DEFAULT_TASK}"
-
-    tool_str = str(seed.TOOL_SCHEMAS)
-    prompt = prompt_template.replace("{target}", target)
-    if "{tools}" in prompt:
-        prompt = prompt.replace("{tools}", tool_str)
-    else:
-        prompt = f"{prompt}\n\n# TOOLS\n{tool_str}"
-    if task_override:
-        prompt = f"{prompt}\n\n# TASK OVERRIDE\n{task_override}"
-    return prompt

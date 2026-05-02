@@ -77,29 +77,6 @@ class RedPurpleAdapter(GEPAAdapter):
                     "stop_reason": traj.stop_reason,
                     "iterations_used": traj.iterations,
                 },
-                "Feedback": _build_feedback(traj),
+                "Trace": traj.context_window,
             })
         return {name: records for name in components_to_update}
-
-
-def _build_feedback(traj: RedPurpleTrajectory) -> str:
-    if traj.error:
-        return f"Evaluation error: {traj.error}"
-    if traj.success:
-        return f"Captured the flag in {traj.iterations} iterations."
-    return (
-        f"Failed to capture the flag. stop_reason={traj.stop_reason}, "
-        f"iterations={traj.iterations}. Agent conversation:\n\n"
-        f"{_render_context(traj.context_window)}"
-    )
-
-
-def _render_context(history: list[dict]) -> str:
-    lines = []
-    for msg in history:
-        role = msg.get("role", "?")
-        content = str(msg.get("content", ""))
-        if len(content) > 4000:
-            content = content[:2000] + "\n…[truncated]…\n" + content[-2000:]
-        lines.append(f"=== {role} ===\n{content}")
-    return "\n\n".join(lines)

@@ -4,6 +4,7 @@
 import json
 import os
 import signal
+import urllib.request
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,8 +22,24 @@ def _on_sigint(signum, frame):
     print("\n[red-purple] Ctrl+C — stopping all benchmarks and exiting…", flush=True)
     try:
         benchmark.force_stop_all()
+        try:
+            urllib.request.urlopen(
+                urllib.request.Request("http://localhost:8000/cancel", method="POST"),
+                timeout=5,
+            )
+        except Exception:
+            pass
     finally:
         os._exit(130)
+
+
+def _load_background_context(value: str | None, base: Path) -> str | None:
+    if not value:
+        return None
+    path = base / value
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    return value
 
 
 def main():
@@ -36,11 +53,15 @@ def main():
         workers=cfg["workers"],
         agent_max_iter=cfg["agent_max_iter"],
         agent_model=cfg["agent_model"],
+        judge_model=cfg.get("judge_model", ""),
+        gt=cfg.get("gt", False),
         train_minibatch_size=cfg.get("train_minibatch_size"),
         val_minibatch_size=cfg.get("val_minibatch_size"),
         config_path=CONFIG_PATH,
         reflection_lm=cfg.get("reflection_lm"),
         use_wandb=cfg.get("use_wandb", False),
+        experiment_name=cfg.get("experiment_name"),
+        background_context=_load_background_context(cfg.get("background_context"), REPO_ROOT),
     )
 
 

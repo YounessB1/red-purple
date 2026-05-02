@@ -8,6 +8,8 @@ services:
       - "8000:8000"
     volumes:
       - ..:/app/source:ro
+    environment:
+      - PYTHONUNBUFFERED=1
     env_file:
       - ../../.env
     extra_hosts:
