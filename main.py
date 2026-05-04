@@ -10,7 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from source import benchmark
-from source.optimize_anything.core_loop import run
+from source.optimize_anything.core_loop import run, flush_logger
 
 load_dotenv()
 
@@ -30,6 +30,7 @@ def _on_sigint(signum, frame):
         except Exception:
             pass
     finally:
+        flush_logger()
         os._exit(130)
 
 
@@ -44,6 +45,14 @@ def _load_background_context(value: str | None, base: Path) -> str | None:
 
 def main():
     signal.signal(signal.SIGINT, _on_sigint)
+
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request("http://localhost:8000/reset", method="POST"),
+            timeout=5,
+        )
+    except Exception:
+        pass
 
     cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 

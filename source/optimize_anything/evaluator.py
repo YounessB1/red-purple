@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import threading
 from pathlib import Path
 import urllib.error
 import urllib.parse
@@ -19,10 +20,11 @@ AGENT_MODEL: str = ""
 JUDGE_MODEL: str = ""
 GT: bool = False
 AGENT_SERVER_URL: str = "http://localhost:8000"
+LOGGER = None
 
-# Iteration tracking — each unique candidate hash = one GEPA iteration
-_seen_candidates: dict[str, int] = {}
-_iteration_counter: int = 0
+# Iteration tracking — driven by GEPA engine callbacks, not candidate hashes
+_gepa_iteration: int = 0
+_gepa_iteration_lock = threading.Lock()
 
 
 def configure_runtime(
@@ -32,25 +34,29 @@ def configure_runtime(
     agent_model: str,
     judge_model: str,
     gt: bool,
+    logger=None,
 ) -> None:
-    global EXPERIMENT_DIR, AGENT_MAX_ITER, AGENT_MODEL, JUDGE_MODEL, GT
-    global _seen_candidates, _iteration_counter
+    global EXPERIMENT_DIR, AGENT_MAX_ITER, AGENT_MODEL, JUDGE_MODEL, GT, LOGGER
+    global _gepa_iteration
 
     EXPERIMENT_DIR = experiment_dir
     AGENT_MAX_ITER = agent_max_iter
     AGENT_MODEL = agent_model
     JUDGE_MODEL = judge_model
     GT = gt
-    _seen_candidates = {}
-    _iteration_counter = 0
+    LOGGER = logger
+    _gepa_iteration = 0
 
 
-def _get_iteration(candidate_hash: str) -> int:
-    global _iteration_counter
-    if candidate_hash not in _seen_candidates:
-        _iteration_counter += 1
-        _seen_candidates[candidate_hash] = _iteration_counter
-    return _seen_candidates[candidate_hash]
+def set_gepa_iteration(n: int) -> None:
+    global _gepa_iteration
+    with _gepa_iteration_lock:
+        _gepa_iteration = n
+
+
+def _get_iteration() -> int:
+    with _gepa_iteration_lock:
+        return _gepa_iteration
 
 
 def save_run(run_dir: Path, metadata: dict, context_window: list) -> None:
@@ -70,7 +76,7 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
     """
     bench_id = example["benchmark_id"]
     c_hash = _candidate_hash(candidate)
-    iteration = _get_iteration(c_hash)
+    iteration = _get_iteration()
 
     split = example.get("split", "unknown")
     base_dir = EXPERIMENT_DIR or Path("experiments")
@@ -97,10 +103,12 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
             print(f"[eval] {bench_id} — stopping benchmark")
             stop_benchmark(bench_id)
 
+    LOGGER.log_agents(metadata)
+
     if metadata["success"]:
         score = 1.0
     elif JUDGE_MODEL:
-        score = llm_judge(context_window, bench_id, model=JUDGE_MODEL, gt=GT)
+        score = llm_judge(context_window, bench_id, model=JUDGE_MODEL, logger=LOGGER, gt=GT)
     else:
         score = 0.0
     print(f"[eval] {bench_id} — score {score:.3f} - {metadata['stop_reason']}")

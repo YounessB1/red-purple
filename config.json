@@ -12,5 +12,5 @@
   "reflection_lm": "openrouter/openai/gpt-5",
   "use_wandb": false,
   "background_context": "background.txt",
-  "experiment_name": "experiment1"
+  "experiment_name": null
 }

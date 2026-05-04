@@ -5,17 +5,41 @@ import os
 import random
 import re
 import shutil
-import threading
 from pathlib import Path
 
 from gepa import optimize
 from gepa.strategies.eval_policy import FullEvaluationPolicy
 
+from source.llm import LLM
 from source.optimize_anything import cache, evaluator
 from source.optimize_anything.adapter import RedPurpleAdapter
 from source.optimize_anything.callbacks import TracingCallback
 from source.optimize_anything.dataset import load_dataset
+from source.optimize_anything.logger import Logger
 from source.seed import PROMPT
+
+
+_active_logger: "Logger | None" = None
+
+
+def flush_logger() -> None:
+    """Write the experiment summary to disk. Safe to call from a signal handler."""
+    if _active_logger is not None:
+        _active_logger.write_summary()
+
+
+class ReflectorLLM:
+    """Thin wrapper around LLM that logs reflector token usage to the experiment Logger."""
+
+    def __init__(self, model: str, logger: Logger) -> None:
+        self._llm = LLM(model)
+        self._logger = logger
+
+    def __call__(self, prompt: str | list[dict]) -> str:
+        messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        content, input_tokens, output_tokens = self._llm.generate(messages)
+        self._logger.log_reflector(input_tokens, output_tokens, messages, content)
+        return content
 
 
 class SubsetValPolicy(FullEvaluationPolicy):
@@ -30,31 +54,6 @@ class SubsetValPolicy(FullEvaluationPolicy):
         if self.k >= len(all_ids):
             return all_ids
         return self.rng.sample(all_ids, self.k)
-
-
-class LoggingLM:
-    """Wraps the reflection LM to log every call's input and output to disk."""
-
-    def __init__(self, model: str, log_dir: Path) -> None:
-        self._model = model
-        self._log_dir = log_dir
-        self._counter = 0
-        self._lock = threading.Lock()
-
-    def __call__(self, prompt: str | list[dict]) -> str:
-        import litellm
-        messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
-        response = litellm.completion(model=self._model, messages=messages)
-        content = response.choices[0].message.content
-        with self._lock:
-            self._counter += 1
-            n = self._counter
-        self._log_dir.mkdir(parents=True, exist_ok=True)
-        (self._log_dir / f"lm_call_{n:04d}.json").write_text(
-            json.dumps({"prompt": messages, "response": content}, indent=2, default=str, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        return content
 
 
 def _next_experiment_dir(base: Path) -> Path:
@@ -121,6 +120,15 @@ def run(
         experiment_dir = _next_experiment_dir(experiments_dir)
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
+    global _active_logger
+    logger = Logger(
+        reflector_model=reflection_lm or "",
+        judge_model=judge_model,
+        agent_model=agent_model,
+        log_dir=experiment_dir,
+    )
+    _active_logger = logger
+
     # Configure evaluator + cache module state
     evaluator.configure_runtime(
         experiment_dir=experiment_dir,
@@ -128,6 +136,7 @@ def run(
         agent_model=agent_model,
         judge_model=judge_model,
         gt=gt,
+        logger=logger,
     )
     cache.CACHE_DIR = experiments_dir / ".eval_cache"
 
@@ -138,7 +147,8 @@ def run(
     shutil.copy2(config_path, experiment_dir / "config.json")
 
     adapter = RedPurpleAdapter(workers=workers)
-    callbacks = [TracingCallback(log_dir=experiment_dir / "reflection_logs")]
+    seed = _build_seed_candidate()
+    callbacks = [TracingCallback(log_dir=experiment_dir / "reflection_logs", seed_candidate=seed)]
 
     print(f"[red-purple] Experiment: {experiment_dir.name}")
     print(f"[red-purple] Train: {len(train)} benchmarks, Val: {len(val)} benchmarks")
@@ -156,32 +166,34 @@ def run(
             "wandb_init_kwargs": {"name": experiment_dir.name},
         }
 
-    lm = (
-        LoggingLM(reflection_lm, log_dir=experiment_dir / "reflection_logs")
-        if reflection_lm
-        else None
-    )
+    lm = ReflectorLLM(reflection_lm, logger) if reflection_lm else None
 
-    result = optimize(
-        seed_candidate=_build_seed_candidate(),
-        trainset=train,
-        valset=val,
-        adapter=adapter,
-        reflection_lm=lm,
-        reflection_minibatch_size=train_minibatch_size,
-        reflection_prompt_template=_build_reflection_prompt_template(background_context) if background_context else None,
-        max_metric_calls=max_calls,
-        run_dir=str(experiment_dir / "oa_state"),
-        callbacks=callbacks,
-        val_evaluation_policy=(
-            SubsetValPolicy(k=val_minibatch_size) if val_minibatch_size is not None else "full_eval"
-        ),
-        skip_perfect_score=False,
-        use_cloudpickle=True,
-        cache_evaluation=True,
-        seed=0,
-        **wandb_kwargs,
-    )
+    logger.start_logger()
+
+    try:
+        result = optimize(
+            seed_candidate=seed,
+            trainset=train,
+            valset=val,
+            adapter=adapter,
+            reflection_lm=lm,
+            reflection_minibatch_size=train_minibatch_size,
+            reflection_prompt_template=_build_reflection_prompt_template(background_context) if background_context else None,
+            max_metric_calls=max_calls,
+            run_dir=str(experiment_dir / "oa_state"),
+            callbacks=callbacks,
+            val_evaluation_policy=(
+                SubsetValPolicy(k=val_minibatch_size) if val_minibatch_size is not None else "full_eval"
+            ),
+            skip_perfect_score=False,
+            use_cloudpickle=True,
+            cache_evaluation=True,
+            seed=0,
+            **wandb_kwargs,
+        )
+    finally:
+        logger.stop_logger()
+        _active_logger = None
 
     # Save best candidate
     (experiment_dir / "best_candidate.json").write_text(

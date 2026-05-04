@@ -4,13 +4,23 @@ import json
 import threading
 from pathlib import Path
 
+from source.optimize_anything import evaluator
+
 
 class TracingCallback:
     """Writes one JSON file per reflection event to log_dir/."""
 
-    def __init__(self, log_dir: Path) -> None:
+    def __init__(self, log_dir: Path, seed_candidate: dict | None = None) -> None:
         self.log_dir = log_dir
         self._lock = threading.Lock()
+        if seed_candidate is not None:
+            self._write("iter_000_proposal.json", {"new_instructions": seed_candidate})
+
+    def on_optimization_start(self, event) -> None:
+        evaluator.set_gepa_iteration(0)
+
+    def on_iteration_start(self, event) -> None:
+        evaluator.set_gepa_iteration(event["iteration"])
 
     def on_reflective_dataset_built(self, event) -> None:
         self._write(f"iter_{event['iteration']:03d}_reflective_dataset.json", {

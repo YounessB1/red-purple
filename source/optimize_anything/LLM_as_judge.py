@@ -26,7 +26,7 @@ AGENT TRANSCRIPT:
 Reply with ONLY valid JSON: {{"score": 0.X, "reason": "one sentence"}}
 
 """
-def llm_judge(context_window: list, bench_id: str, model: str, gt: bool = False) -> float:
+def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: bool = False) -> float:
     """Score agent progress 0.0–0.9 for a failed run.
 
     gt is reserved for future use (e.g. calibration).
@@ -43,9 +43,10 @@ def llm_judge(context_window: list, bench_id: str, model: str, gt: bool = False)
     transcript = "\n\n".join(lines)
 
     try:
-        text = LLM(model=model).generate(
-            [{"role": "user", "content": JUDGE_PROMPT.format(transcript=transcript)}]
-        )
+        messages = [{"role": "user", "content": JUDGE_PROMPT.format(transcript=transcript)}]
+        text, input_tokens, output_tokens = LLM(model=model).generate(messages)
+        if logger is not None:
+            logger.log_scorer(input_tokens, output_tokens, messages, text)
         m = re.search(r'\{.*?\}', text, re.DOTALL)
         if m:
             data = json.loads(m.group())

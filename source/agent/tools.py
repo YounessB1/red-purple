@@ -27,9 +27,9 @@ TOOL_SCHEMAS = """<tools>
 </tools>"""
 
 
-def terminal_execute(command: str, timeout: int = 30) -> dict:
+def terminal_execute(command: str, timeout: int = 30, cwd: str | None = None) -> dict:
     try:
-        r = subprocess.run(["bash", "-c", command], capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(["bash", "-c", command], capture_output=True, text=True, timeout=timeout, cwd=cwd)
         return {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode}
     except subprocess.TimeoutExpired:
         return {"error": f"timed out after {timeout}s", "exit_code": -1}
@@ -46,19 +46,3 @@ TOOLS = {
     "finish": finish,
 }
 
-TOOLS_PROMPT = f"""
-# TOOLS
-You have access to the following tools:
-
-{TOOL_SCHEMAS}
-
-Large tool outputs may be summarised in <extracted_output> blocks. Context from earlier in the conversation may be compressed into <context_summary> blocks. Treat both as reliable — do not repeat work already described in them.
-
-# TOOL CALL FORMAT
-To call a tool, use XML tags where each tag name is the parameter name. Example:
-<function_calls>
-<invoke name="terminal_execute">
-<command>ls -la</command>
-</invoke>
-</function_calls>
-"""

@@ -10,36 +10,32 @@ litellm.drop_params = True
 
 
 class LLM:
-    def __init__(self, model: str, tracer=None) -> None:
+    def __init__(self, model: str) -> None:
         self.model = model
-        self.api_key  = os.environ.get("OPENROUTER_API_KEY")
-        self.api_base = os.environ.get("LLM_API_BASE")
-        self.tracer = tracer
+        self.api_key = os.environ.get("OPENROUTER_API_KEY")
 
-    def generate(self, messages: list[dict[str, Any]], max_retries: int = 3) -> str:
+    def generate(self, messages: list[dict[str, Any]], max_retries: int = 3) -> tuple[str, int, int]:
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0}
         if self.api_key:
             kwargs["api_key"] = self.api_key
-        if self.api_base:
-            kwargs["api_base"] = self.api_base
 
-        t0 = time.perf_counter()
         for attempt in range(max_retries):
             try:
-                response = litellm.completion(**kwargs)
+                response = litellm.completion(**kwargs, timeout=120)
                 break
-            except (litellm.exceptions.APIError, litellm.exceptions.APIConnectionError):
+            except Exception:
                 if attempt == max_retries - 1:
                     raise
                 wait = 2 ** attempt
                 time.sleep(wait)
-        latency_ms = (time.perf_counter() - t0) * 1000.0
 
         content       = response.choices[0].message.content or ""
         input_tokens  = response.usage.prompt_tokens     if response.usage else 0
         output_tokens = response.usage.completion_tokens if response.usage else 0
 
-        if self.tracer is not None:
-            self.tracer.log_llm_call(input_tokens, output_tokens, latency_ms)
+        return content, input_tokens, output_tokens
 
+    def __call__(self, prompt: str | list[dict]) -> str:
+        messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        content, _, _ = self.generate(messages)
         return content

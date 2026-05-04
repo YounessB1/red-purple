@@ -27,6 +27,15 @@ def _rewrite_localhost(url: str) -> str:
     return url
 
 
+@app.post("/reset")
+async def reset_endpoint() -> dict:
+    global _active_runs
+    _cancel_event.clear()
+    with _runs_lock:
+        _active_runs = 0
+    return {"status": "reset"}
+
+
 @app.post("/cancel")
 async def cancel_endpoint() -> dict:
     _cancel_event.set()
@@ -41,8 +50,6 @@ async def run_endpoint(target: str, max_iter: int = 100, seed_json: str = "", mo
     prompt = json.loads(seed_json).get("prompt") if seed_json else None
 
     with _runs_lock:
-        if _active_runs == 0:
-            _cancel_event.clear()
         _active_runs += 1
 
     loop = asyncio.get_event_loop()

@@ -63,15 +63,17 @@ class Tracer:
         self._total_input_tokens:  int   = 0
         self._total_output_tokens: int   = 0
         self._total_cost_usd:      float = 0.0
-        self._llm_calls:  list[dict[str, Any]] = []
-        self._tool_calls: list[dict[str, Any]] = []
+        self._llm_calls:      list[dict[str, Any]] = []
+        self._tool_calls:     list[dict[str, Any]] = []
+        self._scorer_calls:   int = 0
+        self._compactor_calls: int = 0
         self._stop_reason: str = "unknown"
 
     # ------------------------------------------------------------------
     # Write API — called during a run
     # ------------------------------------------------------------------
 
-    def log_llm_call(self, input_tokens: int, output_tokens: int, latency_ms: float) -> None:
+    def log_llm_call(self, input_tokens: int, output_tokens: int, tag: str | None = None) -> None:
         cost = _compute_cost(self.model, input_tokens, output_tokens, self._prices)
         self._total_input_tokens  += input_tokens
         self._total_output_tokens += output_tokens
@@ -79,9 +81,12 @@ class Tracer:
         self._llm_calls.append({
             "input_tokens":  input_tokens,
             "output_tokens": output_tokens,
-            "latency_ms":    round(latency_ms, 1),
             "cost_usd":      round(cost, 8),
         })
+        if tag == "scorer":
+            self._scorer_calls += 1
+        elif tag == "compactor":
+            self._compactor_calls += 1
 
     def log_tool_call(self, name: str, args: dict, latency_ms: float) -> None:
         self._tool_calls.append({
@@ -104,7 +109,7 @@ class Tracer:
         flag        = _detect_flag(history)
         success     = flag is not None
 
-        if success and self._stop_reason == "unknown":
+        if success:
             self._stop_reason = "flag_found"
 
         metadata: dict[str, Any] = {
@@ -129,6 +134,8 @@ class Tracer:
 
             # LLM usage
             "llm_calls":            len(self._llm_calls),
+            "scorer_calls":         self._scorer_calls,
+            "compactor_calls":      self._compactor_calls,
             "tool_calls":           len(self._tool_calls),
             "total_input_tokens":   self._total_input_tokens,
             "total_output_tokens":  self._total_output_tokens,

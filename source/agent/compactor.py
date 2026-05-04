@@ -55,11 +55,13 @@ def compact(history: list[dict], model: str, tracer=None) -> list[dict]:
         f"{m['role'].upper()}: {m.get('content', '')}" for m in middle
     )
 
-    llm = LLM(model=model, tracer=tracer)
-    summary = llm.generate([
+    llm = LLM(model=model)
+    summary, input_tokens, output_tokens = llm.generate([
         {"role": "system",  "content": _SYSTEM},
         {"role": "user",    "content": conversation},
     ])
+    if tracer is not None:
+        tracer.log_llm_call(input_tokens, output_tokens, tag="compactor")
 
     print(f"[compactor] context compacted — kept {RECENT_MESSAGES} recent messages", flush=True)
     summary_msg = {"role": "user", "content": f"<context_summary>\n{summary}\n</context_summary>"}
