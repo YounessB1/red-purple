@@ -18,6 +18,9 @@ EXPERIMENT_DIR: Path | None = None
 AGENT_MAX_ITER: int = 50
 AGENT_MODEL: str = ""
 JUDGE_MODEL: str = ""
+DIAGNOSER_MODEL: str = ""
+REFLECTOR_MODEL: str = ""
+TRAIN_SIZE: int = 0
 GT: bool = False
 AGENT_SERVER_URL: str = "http://localhost:8000"
 LOGGER = None
@@ -26,6 +29,10 @@ LOGGER = None
 _gepa_iteration: int = 0
 _gepa_iteration_lock = threading.Lock()
 
+# Role tracking — "parent" or "child" within a train iteration, "val" otherwise
+_gepa_role: str = "val"
+_gepa_role_lock = threading.Lock()
+
 
 def configure_runtime(
     *,
@@ -33,16 +40,22 @@ def configure_runtime(
     agent_max_iter: int,
     agent_model: str,
     judge_model: str,
+    diagnoser_model: str = "",
+    reflector_model: str = "",
+    train_size: int = 0,
     gt: bool,
     logger=None,
 ) -> None:
-    global EXPERIMENT_DIR, AGENT_MAX_ITER, AGENT_MODEL, JUDGE_MODEL, GT, LOGGER
+    global EXPERIMENT_DIR, AGENT_MAX_ITER, AGENT_MODEL, JUDGE_MODEL, DIAGNOSER_MODEL, REFLECTOR_MODEL, TRAIN_SIZE, GT, LOGGER
     global _gepa_iteration
 
     EXPERIMENT_DIR = experiment_dir
     AGENT_MAX_ITER = agent_max_iter
     AGENT_MODEL = agent_model
     JUDGE_MODEL = judge_model
+    DIAGNOSER_MODEL = diagnoser_model
+    REFLECTOR_MODEL = reflector_model
+    TRAIN_SIZE = train_size
     GT = gt
     LOGGER = logger
     _gepa_iteration = 0
@@ -57,6 +70,17 @@ def set_gepa_iteration(n: int) -> None:
 def _get_iteration() -> int:
     with _gepa_iteration_lock:
         return _gepa_iteration
+
+
+def set_gepa_role(role: str) -> None:
+    global _gepa_role
+    with _gepa_role_lock:
+        _gepa_role = role
+
+
+def _get_role() -> str:
+    with _gepa_role_lock:
+        return _gepa_role
 
 
 def save_run(run_dir: Path, metadata: dict, context_window: list) -> None:
@@ -80,12 +104,14 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
 
     split = example.get("split", "unknown")
     base_dir = EXPERIMENT_DIR or Path("experiments")
-    runs_dir = base_dir / f"iteration_{iteration:03d}" / split
+    role = _get_role()
+    subpath = f"{split}/{role}" if split == "train" else split
+    runs_dir = base_dir / f"iteration_{iteration:03d}" / subpath
     run_dir = runs_dir / bench_id
 
     cached = cache.try_load(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
     if cached is not None:
-        metadata, context_window = cached
+        metadata, context_window, diagnosis = cached
         print(f"[eval] {bench_id} — cache hit")
     else:
         print(f"[eval] {bench_id} — starting benchmark")
@@ -99,6 +125,15 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
             metadata, context_window = artifacts["metadata"], artifacts["context_window"]
             save_run(run_dir, metadata, context_window)
             cache.try_save(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
+            if DIAGNOSER_MODEL and not metadata["success"] and _get_role() == "parent":
+                from source.optimize_anything.diagnoser import diagnose
+                diagnosis = diagnose(context_window, metadata, DIAGNOSER_MODEL, LOGGER,
+                                    reflector_model=REFLECTOR_MODEL, train_size=TRAIN_SIZE)
+                (run_dir / "diagnosis.json").write_text(
+                    json.dumps({"diagnosis": diagnosis}, indent=2), encoding="utf-8"
+                )
+            else:
+                diagnosis = ""
         finally:
             print(f"[eval] {bench_id} — stopping benchmark")
             stop_benchmark(bench_id)
@@ -118,6 +153,7 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
         "stop_reason": metadata["stop_reason"],
         "iterations": metadata["iterations_used"],
         "context_window": context_window,
+        "diagnosis": diagnosis,
     }
     return score, side_info
 

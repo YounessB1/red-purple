@@ -63,6 +63,7 @@ def main():
         agent_max_iter=cfg["agent_max_iter"],
         agent_model=cfg["agent_model"],
         judge_model=cfg.get("judge_model", ""),
+        diagnoser_model=cfg.get("diagnoser_model", ""),
         gt=cfg.get("gt", False),
         train_minibatch_size=cfg.get("train_minibatch_size"),
         val_minibatch_size=cfg.get("val_minibatch_size"),

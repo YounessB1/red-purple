@@ -29,9 +29,10 @@ def try_load(
     model: str,
     max_iter: int,
     run_dir: Path,
-) -> tuple[dict, list] | None:
-    """Return cached (metadata, context_window) on a seed-candidate cache hit, else None.
+) -> tuple[dict, list, str] | None:
+    """Return cached (metadata, context_window, diagnosis) on a seed-candidate cache hit, else None.
 
+    diagnosis is "" when no diagnosis.json exists (val runs, successful parent runs).
     On hit: restores the cached run artifacts into `run_dir`. Score is NOT cached
     so the caller always recomputes it with the current judge configuration.
     """
@@ -46,8 +47,10 @@ def try_load(
 
     metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
     context_window = json.loads(context_file.read_text(encoding="utf-8"))
+    diagnosis_file = artifacts_dir / "diagnosis.json"
+    diagnosis = json.loads(diagnosis_file.read_text(encoding="utf-8"))["diagnosis"] if diagnosis_file.exists() else ""
     _restore_artifacts(key, bench_id, run_dir)
-    return metadata, context_window
+    return metadata, context_window, diagnosis
 
 
 def try_save(

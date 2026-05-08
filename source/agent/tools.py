@@ -11,7 +11,7 @@ TOOL_SCHEMAS = """<tools>
         <description>The bash command to execute.</description>
       </parameter>
       <parameter name="timeout" type="integer" required="false">
-        <description>Timeout in seconds. Default is 30.</description>
+        <description>Timeout in seconds. Default is 100.</description>
       </parameter>
     </parameters>
     <returns>stdout, stderr, exit_code</returns>
@@ -27,7 +27,7 @@ TOOL_SCHEMAS = """<tools>
 </tools>"""
 
 
-def terminal_execute(command: str, timeout: int = 30, cwd: str | None = None) -> dict:
+def terminal_execute(command: str, timeout: int = 100, cwd: str | None = None) -> dict:
     try:
         r = subprocess.run(["bash", "-c", command], capture_output=True, text=True, timeout=timeout, cwd=cwd)
         return {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode}
@@ -45,4 +45,3 @@ TOOLS = {
     "terminal_execute": terminal_execute,
     "finish": finish,
 }
-

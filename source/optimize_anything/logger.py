@@ -14,21 +14,22 @@ def _empty_bucket() -> dict:
 class Logger:
     """Experiment-level accumulator for reflector, scorer, and agent LLM usage."""
 
-    def __init__(self, reflector_model: str, judge_model: str, agent_model: str, log_dir: Path) -> None:
+    def __init__(self, reflector_model: str, judge_model: str, agent_model: str, log_dir: Path, diagnoser_model: str = "") -> None:
         self._reflector_model = reflector_model
         self._judge_model = judge_model
         self._agent_model = agent_model
+        self._diagnoser_model = diagnoser_model
         self._log_dir = log_dir
         self._lock = threading.Lock()
         self._prices = _load_prices()
         self._started_at: datetime | None = None
 
-        self._reflector, self._scorer, self._agents, self._previous_duration = self._load_existing()
+        self._reflector, self._scorer, self._agents, self._diagnoser, self._previous_duration = self._load_existing()
 
-    def _load_existing(self) -> tuple[dict, dict, dict, float]:
+    def _load_existing(self) -> tuple[dict, dict, dict, dict, float]:
         summary_path = self._log_dir / "experiment_summary.json"
         if not summary_path.exists():
-            return _empty_bucket(), _empty_bucket(), _empty_bucket(), 0.0
+            return _empty_bucket(), _empty_bucket(), _empty_bucket(), _empty_bucket(), 0.0
         try:
             data = json.loads(summary_path.read_text(encoding="utf-8"))
             def _bucket_from(key: str) -> dict:
@@ -40,9 +41,9 @@ class Logger:
                     "cost_usd":      src.get("cost_usd", 0.0),
                 }
             previous_duration = data.get("duration_seconds") or 0.0
-            return _bucket_from("reflector"), _bucket_from("scorer"), _bucket_from("agents"), previous_duration
+            return _bucket_from("reflector"), _bucket_from("scorer"), _bucket_from("agents"), _bucket_from("diagnoser"), previous_duration
         except Exception:
-            return _empty_bucket(), _empty_bucket(), _empty_bucket(), 0.0
+            return _empty_bucket(), _empty_bucket(), _empty_bucket(), _empty_bucket(), 0.0
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -86,6 +87,21 @@ class Logger:
         self._accumulate(self._scorer, "scorer", self._judge_model,
                          input_tokens, output_tokens, input_text, output_text)
 
+    def log_reflector_changes(self, changes: str) -> None:
+        iteration = _get_iteration()
+        call_dir = self._log_dir / f"iteration_{iteration:03d}"
+        call_dir.mkdir(parents=True, exist_ok=True)
+        (call_dir / "reflector_changes.json").write_text(
+            json.dumps({"changes": changes}, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def log_diagnoser(self, input_tokens: int, output_tokens: int) -> None:
+        cost = _compute_cost(self._diagnoser_model, input_tokens, output_tokens, self._prices)
+        with self._lock:
+            self._diagnoser["calls"]         += 1
+            self._diagnoser["input_tokens"]  += input_tokens
+            self._diagnoser["output_tokens"] += output_tokens
+            self._diagnoser["cost_usd"]      += cost
 
     def log_agents(self, metadata: dict) -> None:
         with self._lock:
@@ -100,9 +116,9 @@ class Logger:
         self._log_dir.mkdir(parents=True, exist_ok=True)
         session_duration = (datetime.now(UTC) - self._started_at).total_seconds() if self._started_at else 0.0
         total_duration = round(self._previous_duration + session_duration, 3)
-        total_input  = self._reflector["input_tokens"]  + self._scorer["input_tokens"]  + self._agents["input_tokens"]
-        total_output = self._reflector["output_tokens"] + self._scorer["output_tokens"] + self._agents["output_tokens"]
-        total_cost   = self._reflector["cost_usd"]      + self._scorer["cost_usd"]      + self._agents["cost_usd"]
+        total_input  = self._reflector["input_tokens"]  + self._scorer["input_tokens"]  + self._agents["input_tokens"]  + self._diagnoser["input_tokens"]
+        total_output = self._reflector["output_tokens"] + self._scorer["output_tokens"] + self._agents["output_tokens"] + self._diagnoser["output_tokens"]
+        total_cost   = self._reflector["cost_usd"]      + self._scorer["cost_usd"]      + self._agents["cost_usd"]      + self._diagnoser["cost_usd"]
         summary = {
             "duration_seconds":    total_duration,
             "total_input_tokens":  total_input,
@@ -111,7 +127,8 @@ class Logger:
             "total_cost_usd":      round(total_cost, 6),
             "reflector": {**self._reflector, "model": self._reflector_model, "cost_usd": round(self._reflector["cost_usd"], 6)},
             "scorer":    {**self._scorer,    "model": self._judge_model,     "cost_usd": round(self._scorer["cost_usd"],    6)},
-            "agents":    {**self._agents,    "model": self._agent_model, "cost_usd": round(self._agents["cost_usd"],    6)},
+            "agents":    {**self._agents,    "model": self._agent_model,     "cost_usd": round(self._agents["cost_usd"],    6)},
+            "diagnoser": {**self._diagnoser, "model": self._diagnoser_model, "cost_usd": round(self._diagnoser["cost_usd"], 6)},
         }
         (self._log_dir / "experiment_summary.json").write_text(
             json.dumps(summary, indent=2), encoding="utf-8"

@@ -14,8 +14,10 @@ class LLM:
         self.model = model
         self.api_key = os.environ.get("OPENROUTER_API_KEY")
 
-    def generate(self, messages: list[dict[str, Any]], max_retries: int = 3) -> tuple[str, int, int]:
+    def generate(self, messages: list[dict[str, Any]], max_retries: int = 3, cap_output: bool = False) -> tuple[str, int, int]:
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0}
+        if cap_output:
+            kwargs["max_tokens"] = 8192
         if self.api_key:
             kwargs["api_key"] = self.api_key
 
@@ -34,8 +36,3 @@ class LLM:
         output_tokens = response.usage.completion_tokens if response.usage else 0
 
         return content, input_tokens, output_tokens
-
-    def __call__(self, prompt: str | list[dict]) -> str:
-        messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
-        content, _, _ = self.generate(messages)
-        return content

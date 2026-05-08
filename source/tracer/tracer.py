@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-_FLAG_RE = re.compile(r'[Ff][Ll][Aa][Gg]\{[0-9a-f]{64}\}')
+_FLAG_RE = re.compile(r'[Ff][Ll][Aa][Gg]\{[0-9a-fA-F]{64}\}')
 
 _PRICES_PATH = Path(__file__).parent / "model_prices.json"
 
@@ -30,12 +30,11 @@ def _compute_cost(model: str, input_tokens: int, output_tokens: int, prices: dic
 
 
 def _detect_flag(history: list[dict]) -> str | None:
-    """Scan assistant messages (newest first) for FLAG{...} pattern."""
+    """Scan all messages (newest first) for FLAG{...} pattern."""
     for msg in reversed(history):
-        if msg.get("role") == "assistant":
-            match = _FLAG_RE.search(msg.get("content", ""))
-            if match:
-                return match.group(0)
+        match = _FLAG_RE.search(msg.get("content", ""))
+        if match:
+            return match.group(0)
     return None
 
 
@@ -65,7 +64,7 @@ class Tracer:
         self._total_cost_usd:      float = 0.0
         self._llm_calls:      list[dict[str, Any]] = []
         self._tool_calls:     list[dict[str, Any]] = []
-        self._scorer_calls:   int = 0
+        self._extractor_calls: int = 0
         self._compactor_calls: int = 0
         self._stop_reason: str = "unknown"
 
@@ -83,8 +82,8 @@ class Tracer:
             "output_tokens": output_tokens,
             "cost_usd":      round(cost, 8),
         })
-        if tag == "scorer":
-            self._scorer_calls += 1
+        if tag == "extractor":
+            self._extractor_calls += 1
         elif tag == "compactor":
             self._compactor_calls += 1
 
@@ -134,7 +133,7 @@ class Tracer:
 
             # LLM usage
             "llm_calls":            len(self._llm_calls),
-            "scorer_calls":         self._scorer_calls,
+            "extractor_calls":      self._extractor_calls,
             "compactor_calls":      self._compactor_calls,
             "tool_calls":           len(self._tool_calls),
             "total_input_tokens":   self._total_input_tokens,

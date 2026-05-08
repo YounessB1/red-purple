@@ -47,7 +47,7 @@ def _single_extract(text: str, model: str, tracer=None) -> str:
         {"role": "user",   "content": text},
     ])
     if tracer is not None:
-        tracer.log_llm_call(input_tokens, output_tokens, tag="scorer")
+        tracer.log_llm_call(input_tokens, output_tokens, tag="extractor")
     return summary
 
 

@@ -15,6 +15,7 @@ class RedPurpleTrajectory:
     stop_reason: str
     iterations: int
     context_window: list[dict]
+    diagnosis: str = ""
     error: str | None = None
 
 
@@ -39,6 +40,7 @@ class RedPurpleAdapter(GEPAAdapter):
                         stop_reason=side_info["stop_reason"],
                         iterations=side_info["iterations"],
                         context_window=side_info.get("context_window") or [],
+                        diagnosis=side_info.get("diagnosis", ""),
                     )
                 return score, output, trajectory
             except Exception as e:
@@ -71,12 +73,15 @@ class RedPurpleAdapter(GEPAAdapter):
     def make_reflective_dataset(self, _candidate, eval_batch, components_to_update):
         records = []
         for traj in (eval_batch.trajectories or []):
+            if not traj.diagnosis:
+                continue
             records.append({
                 "Inputs": {"benchmark_id": traj.benchmark_id},
                 "Generated Outputs": {
                     "stop_reason": traj.stop_reason,
                     "iterations_used": traj.iterations,
+                    "success": traj.success,
                 },
-                "Trace": traj.context_window,
+                "Trace": traj.diagnosis,
             })
         return {name: records for name in components_to_update}

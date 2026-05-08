@@ -66,7 +66,7 @@ def run(
             if compactor.should_compact(history, model):
                 history = compactor.compact(history, model, tracer=tracer)
             try:
-                content, input_tokens, output_tokens = llm.generate(history)
+                content, input_tokens, output_tokens = llm.generate(history, cap_output=True)
                 tracer.log_llm_call(input_tokens, output_tokens)
             except Exception as e:
                 stop_reason = f"llm_error: {type(e).__name__}"

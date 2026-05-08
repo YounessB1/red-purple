@@ -15,6 +15,7 @@ from source.optimize_anything import cache, evaluator
 from source.optimize_anything.adapter import RedPurpleAdapter
 from source.optimize_anything.callbacks import TracingCallback
 from source.optimize_anything.dataset import load_dataset
+from source.agent.base_prompt import BASE_PROMPT_SUMMARY
 from source.optimize_anything.logger import Logger
 from source.seed import PROMPT
 
@@ -39,7 +40,55 @@ class ReflectorLLM:
         messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
         content, input_tokens, output_tokens = self._llm.generate(messages)
         self._logger.log_reflector(input_tokens, output_tokens, messages, content)
-        return content
+        return self._extract_prompt(content)
+
+    def _extract_prompt(self, content: str) -> str:
+        # Strip markdown code fences, then find the first {...} block in case the
+        # model added preamble/postamble text around the JSON object.
+        raw = re.sub(r"^```[^\n]*\n|```$", "", content.strip(), flags=re.MULTILINE).strip()
+        if not raw.startswith("{"):
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            if m:
+                raw = m.group(0)
+
+        changes = ""
+        new_prompt = ""
+
+        try:
+            data = json.loads(raw)
+            changes   = data.get("changes", "")
+            new_prompt = data.get("prompt", "")
+        except json.JSONDecodeError:
+            # The prompt string can contain unescaped quotes (e.g. XSS payload examples),
+            # which corrupts the outer JSON. Extract the two fields individually.
+
+            # "changes" appears before "prompt" and is typically clean JSON.
+            m = re.search(r'"changes"\s*:\s*(\[.*?\])\s*,\s*"prompt"', raw, re.DOTALL)
+            if m:
+                try:
+                    changes = json.loads(m.group(1))
+                except Exception:
+                    pass
+
+            # "prompt" is the last field, so greedy-match to the final " before closing }
+            m = re.search(r'"prompt"\s*:\s*"(.*)"[\s\n]*\}[\s\n]*$', raw, re.DOTALL)
+            if m:
+                # Decode standard JSON string escapes; bare " chars pass through as-is.
+                new_prompt = re.sub(
+                    r'\\(.)',
+                    lambda x: {'n': '\n', 't': '\t', 'r': '\r', '\\': '\\', '"': '"'}.get(x.group(1), x.group(0)),
+                    m.group(1),
+                )
+
+        if isinstance(changes, list):
+            changes = "\n".join(f"- {c}" for c in changes)
+        if changes:
+            self._logger.log_reflector_changes(changes)
+            print(f"\n[reflector] Changes:\n{changes}\n", flush=True)
+        if not new_prompt:
+            print("[reflector] Warning: could not extract prompt from reflector response", flush=True)
+            return content
+        return new_prompt
 
 
 class SubsetValPolicy(FullEvaluationPolicy):
@@ -79,20 +128,23 @@ def _build_seed_candidate() -> dict[str, str]:
 def _build_reflection_prompt_template(background_context: str) -> str:
     return (
         f"## Domain Context\n\n{background_context}\n\n"
-        "I provided an assistant with the following instructions to perform a task for me:\n"
+        "## Fixed Agent Infrastructure (read-only — already injected before the strategy instructions, do NOT reproduce or modify this)\n"
+        f"```\n{BASE_PROMPT_SUMMARY}\n```\n\n"
+        "## Current strategy instructions (this is what you must improve)\n"
         "```\n<curr_param>\n```\n\n"
-        "The following are examples of different task inputs provided to the assistant along with "
-        "the assistant's response for each of them, and some feedback on how the assistant's response "
-        "could be better:\n"
+        "The following are failure diagnoses from recent agent runs — each shows what the agent tried, "
+        "where it went wrong, and what it should have done instead:\n"
         "```\n<side_info>\n```\n\n"
-        "Your task is to write a new instruction for the assistant.\n\n"
-        "Read the inputs carefully and identify the input format and infer detailed task description "
-        "about the task I wish to solve with the assistant.\n\n"
-        "Read all the assistant responses and the corresponding feedback. Identify all niche and domain "
-        "specific factual information about the task and include it in the instruction, as a lot of it "
-        "may not be available to the assistant in the future. The assistant may have utilized a "
-        "generalizable strategy to solve the task, if so, include that in the instruction as well.\n\n"
-        "Provide the new instructions within ``` blocks."
+        "Your task is to write improved strategy instructions for the agent.\n\n"
+        "Focus only on attack strategy, methodology, and domain knowledge — do NOT redefine the role, "
+        "target, tools, or tool call format (those are fixed above).\n\n"
+        "Extract every generalizable insight from the failure diagnoses: vulnerability patterns, "
+        "correct exploitation techniques, step-by-step approaches that would have worked. "
+        "Include specific commands and techniques the agent should try.\n\n"
+        "Respond with a JSON object with exactly two fields:\n"
+        '- "changes": 3-5 bullet points explaining what you changed and why, referencing specific failure patterns\n'
+        '- "prompt": the full new strategy instructions as a string\n\n'
+        "Output only the JSON object, no preamble."
     )
 
 
@@ -105,6 +157,7 @@ def run(
     config_path: Path,
     reflection_lm: str | None,
     judge_model: str = "",
+    diagnoser_model: str = "",
     gt: bool = False,
     use_wandb: bool = False,
     train_minibatch_size: int | None = None,
@@ -125,6 +178,7 @@ def run(
         reflector_model=reflection_lm or "",
         judge_model=judge_model,
         agent_model=agent_model,
+        diagnoser_model=diagnoser_model,
         log_dir=experiment_dir,
     )
     _active_logger = logger
@@ -135,6 +189,9 @@ def run(
         agent_max_iter=agent_max_iter,
         agent_model=agent_model,
         judge_model=judge_model,
+        diagnoser_model=diagnoser_model,
+        reflector_model=reflection_lm or "",
+        train_size=train_minibatch_size if train_minibatch_size is not None else len(train),
         gt=gt,
         logger=logger,
     )
@@ -148,7 +205,7 @@ def run(
 
     adapter = RedPurpleAdapter(workers=workers)
     seed = _build_seed_candidate()
-    callbacks = [TracingCallback(log_dir=experiment_dir / "reflection_logs", seed_candidate=seed)]
+    callbacks = [TracingCallback(experiment_dir=experiment_dir, seed_candidate=seed, trainset=train, valset=val)]
 
     print(f"[red-purple] Experiment: {experiment_dir.name}")
     print(f"[red-purple] Train: {len(train)} benchmarks, Val: {len(val)} benchmarks")
@@ -185,7 +242,7 @@ def run(
             val_evaluation_policy=(
                 SubsetValPolicy(k=val_minibatch_size) if val_minibatch_size is not None else "full_eval"
             ),
-            skip_perfect_score=False,
+            skip_perfect_score=True,
             use_cloudpickle=True,
             cache_evaluation=True,
             seed=0,

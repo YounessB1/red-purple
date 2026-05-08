@@ -9,57 +9,95 @@ from pathlib import Path
 
 
 def load_experiment(exp_dir: Path) -> dict:
-    def load_benches(split_dir: Path) -> list:
-        benches = []
-        if split_dir.exists():
-            for bd in sorted(split_dir.iterdir()):
-                mf = bd / "metadata.json"
-                if mf.exists():
-                    m = json.loads(mf.read_text())
-                    benches.append({
-                        "bench": bd.name,
-                        "success": bool(m.get("success")),
-                        "duration_s": round(m.get("duration_seconds", 0)),
-                        "iterations_used": m.get("iterations_used", 0),
-                        "max_iterations": m.get("max_iterations", 0),
-                        "stop_reason": m.get("stop_reason", ""),
-                        "cost_usd": round(m.get("total_cost_usd", 0), 4),
-                    })
-        return benches
-
-    logs_dir = exp_dir / "reflection_logs"
-    proposal_files = sorted(logs_dir.glob("iter_*_proposal.json")) if logs_dir.exists() else []
-
     iterations = []
-    for pf in proposal_files:
-        num = int(pf.stem.split("_")[1])
-        data = json.loads(pf.read_text())
-        prompt = (data.get("new_instructions") or {}).get("prompt", "")
+    for iter_dir in sorted(exp_dir.glob("iteration_*")):
+        num = int(iter_dir.name.split("_")[1])
 
-        if num == 0:
-            status, reject_reason = "seed", None
+        if (iter_dir / "ACCEPTED").exists():
+            status = "accepted"
+        elif (iter_dir / "REJECTED").exists():
+            status = "rejected"
         else:
-            acc_f = logs_dir / f"iter_{num:03d}_accepted.json"
-            rej_f = logs_dir / f"iter_{num:03d}_rejected.json"
-            if acc_f.exists():
-                status, reject_reason = "accepted", None
-            elif rej_f.exists():
-                rej = json.loads(rej_f.read_text())
-                status = "rejected"
-                reject_reason = rej.get("reason", "")
-            else:
-                status, reject_reason = "pending", None
+            status = "pending"
+
+        parent_prompt = ""
+        child_prompt  = ""
+        parent_train  = {}
+        parent_val    = {}
+        child_train   = {}
+        child_val     = None
+        parent_idx    = None
+        evo_path = iter_dir / "evolution.json"
+        if evo_path.exists():
+            evo = json.loads(evo_path.read_text(encoding="utf-8"))
+            parent_prompt = evo.get("parent", {}).get("prompt", "")
+            child_prompt  = evo.get("child",  {}).get("prompt", "")
+            parent_train  = evo.get("parent", {}).get("train") or {}
+            parent_val    = evo.get("parent", {}).get("val")   or {}
+            child_train   = evo.get("child",  {}).get("train") or {}
+            child_val     = evo.get("child",  {}).get("val")
+            parent_idx    = evo.get("parent", {}).get("candidate_idx")
+
+        val_ok    = 0
+        val_total = 0
+        pool_path = iter_dir / "pool.json"
+        if pool_path.exists():
+            pool = json.loads(pool_path.read_text(encoding="utf-8"))
+            candidates = pool.get("candidates", [])
+            if candidates:
+                best = max(candidates, key=lambda c: c.get("val_avg") or 0)
+                val_dict  = best.get("val", {})
+                val_ok    = sum(1 for v in val_dict.values() if v == 1.0)
+                val_total = len(val_dict)
+
+        changes = ""
+        rc_path = iter_dir / "reflector_changes.json"
+        if rc_path.exists():
+            rc = json.loads(rc_path.read_text(encoding="utf-8"))
+            changes = rc.get("changes", "")
+
+        pool_json = ""
+        if pool_path.exists():
+            pool_display = json.loads(pool_path.read_text(encoding="utf-8"))
+            for c in pool_display.get("candidates", []):
+                c.pop("prompt", None)
+            pool_json = json.dumps(pool_display, indent=2)
+
+        reflector_json = ""
+        refl_path = iter_dir / "reflector.json"
+        if refl_path.exists():
+            reflector_json = json.dumps(
+                json.loads(refl_path.read_text(encoding="utf-8")), indent=2
+            )
 
         iterations.append({
-            "id": num,
-            "status": status,
-            "prompt": prompt,
-            "reject_reason": reject_reason,
-            "train": load_benches(exp_dir / f"iteration_{num:03d}" / "train"),
-            "val":   load_benches(exp_dir / f"iteration_{num:03d}" / "val"),
+            "id":             num,
+            "status":         status,
+            "parent_prompt":  parent_prompt,
+            "child_prompt":   child_prompt,
+            "changes":        changes,
+            "val_ok":         val_ok,
+            "val_total":      val_total,
+            "parent_train":   parent_train,
+            "parent_val":     parent_val,
+            "child_train":    child_train,
+            "child_val":      child_val,
+            "parent_idx":     parent_idx,
+            "pool_json":      pool_json,
+            "reflector_json": reflector_json,
         })
 
-    return {"name": exp_dir.name, "iterations": iterations}
+    config = {}
+    config_path = exp_dir / "config.json"
+    if config_path.exists():
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+
+    summary = {}
+    summary_path = exp_dir / "experiment_summary.json"
+    if summary_path.exists():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    return {"name": exp_dir.name, "iterations": iterations, "config": config, "summary": summary}
 
 
 HTML = r"""<!DOCTYPE html>
@@ -74,124 +112,233 @@ body {
   background: #0d1117; color: #c9d1d9;
   height: 100vh; display: flex; flex-direction: column; overflow: hidden;
 }
-/* ── Header ─────────────────────────────────────────────────────────── */
 #hdr {
   background: #161b22; border-bottom: 1px solid #30363d;
   padding: 10px 18px; display: flex; align-items: center; gap: 14px; flex-shrink: 0;
 }
 #hdr h1 { font-size: 15px; font-weight: 600; color: #e6edf3; }
 #hdr .hint { font-size: 12px; color: #6e7681; }
-/* ── Layout ──────────────────────────────────────────────────────────── */
 #body { display: flex; flex: 1; overflow: hidden; }
 #sidebar {
-  width: 230px; flex-shrink: 0; background: #161b22;
+  width: 210px; flex-shrink: 0; background: #161b22;
   border-right: 1px solid #30363d; overflow-y: auto; padding: 8px;
 }
-#main { flex: 1; overflow-y: auto; padding: 18px 22px; }
-/* ── Sidebar cards ───────────────────────────────────────────────────── */
+#main { flex: 1; overflow-y: auto; padding: 18px 24px; }
+#info-sidebar {
+  width: 310px; flex-shrink: 0; background: #161b22;
+  border-left: 1px solid #30363d; overflow-y: auto; padding: 12px;
+}
+.info-panel {
+  background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+  margin-bottom: 12px; overflow: hidden;
+}
+.info-panel-hdr {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  color: #6e7681; padding: 7px 12px; background: #1c2128;
+  border-bottom: 1px solid #30363d;
+}
+.info-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; padding: 5px 12px; border-bottom: 1px solid #161b22;
+  font-size: 12.5px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-key { color: #6e7681; white-space: nowrap; flex-shrink: 0; }
+.info-val { color: #c9d1d9; text-align: right; word-break: break-all; }
+.info-val.mono { font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; }
+.info-sub-hdr {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  color: #484f58; padding: 6px 12px 3px; background: #0d1117;
+}
+.info-cost { color: #d29922; }
+.info-calls { color: #79c0ff; }
 .card {
   border: 1px solid #30363d; border-radius: 7px; padding: 9px 11px;
-  margin-bottom: 5px; cursor: pointer; transition: border-color 0.12s, background 0.12s;
-  position: relative;
+  margin-bottom: 5px; cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
 }
 .card:hover { border-color: #58a6ff; background: #1c2128; }
-.card.sel-a { border-color: #1f6feb; background: #1c2128; box-shadow: 0 0 0 2px #1f6feb55; }
-.card.sel-b { border-color: #8957e5; background: #1c2128; box-shadow: 0 0 0 2px #8957e555; }
-.card-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
-.card-num { font-size: 12px; font-weight: 600; color: #e6edf3; }
+.card.sel   { border-color: #1f6feb; background: #1c2128; box-shadow: 0 0 0 2px #1f6feb55; }
+.card-top   { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+.card-num   { font-size: 12px; font-weight: 600; color: #e6edf3; }
 .badge {
   font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 9px;
   letter-spacing: 0.4px; text-transform: uppercase;
 }
-.b-seed     { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
 .b-accepted { background: #1a4228; color: #3fb950; border: 1px solid #238636; }
 .b-rejected { background: #3d1a1a; color: #f85149; border: 1px solid #da3633; }
 .b-pending  { background: #2d2516; color: #d29922; border: 1px solid #9e6a03; }
-.sel-dot {
-  position: absolute; top: 7px; right: 8px;
-  font-size: 10px; font-weight: 700; width: 18px; height: 18px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-}
-.dot-a { background: #1f6feb; color: #fff; }
-.dot-b { background: #8957e5; color: #fff; }
-.card-scores { font-size: 10px; color: #6e7681; }
-.spill {
-  display: inline-block; background: #21262d; border-radius: 3px;
-  padding: 1px 5px; margin-right: 3px;
-}
-/* ── Main placeholder ────────────────────────────────────────────────── */
+.card-score { font-size: 10px; color: #6e7681; }
 #placeholder {
   height: 100%; display: flex; align-items: center; justify-content: center;
   color: #3d444d; font-size: 14px;
 }
-/* ── Score boxes ─────────────────────────────────────────────────────── */
-.score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
-.sbox {
-  background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 13px 15px;
+.section-title {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
+  color: #6e7681; margin-bottom: 8px; margin-top: 22px;
 }
-.sbox.box-a { border-top: 3px solid #1f6feb; }
-.sbox.box-b { border-top: 3px solid #8957e5; }
-.sbox.box-single { border-top: 3px solid #30363d; grid-column: 1 / -1; }
-.sbox h3 { font-size: 12px; font-weight: 600; color: #e6edf3; margin-bottom: 8px; }
-.big-num { font-size: 26px; font-weight: 700; line-height: 1; }
-.big-sub { font-size: 10px; color: #6e7681; margin-top: 2px; margin-bottom: 8px; }
-.bench-row { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
-.bpill {
-  font-size: 9.5px; padding: 2px 6px; border-radius: 4px;
+.section-title:first-child { margin-top: 0; }
+
+/* ── Tab bar ── */
+.tab-bar {
+  display: flex; gap: 0; margin-bottom: 20px;
+  border-bottom: 1px solid #30363d;
+}
+.tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: #8b949e; font-size: 13px; font-family: inherit;
+  padding: 7px 18px; cursor: pointer; margin-bottom: -1px;
+  transition: color 0.1s;
+}
+.tab:hover { color: #c9d1d9; }
+.tab.sel { color: #e6edf3; border-bottom-color: #f78166; font-weight: 600; }
+.json-view {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 16px; font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px; line-height: 1.65; color: #c9d1d9;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+.parent-tag {
+  display: inline-block; font-size: 11px; color: #79c0ff;
+  background: #1b2333; border: 1px solid #1f6feb;
+  border-radius: 4px; padding: 2px 9px; margin-bottom: 14px;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+/* ── Scores table ── */
+.scores-wrap { display: flex; gap: 16px; margin-bottom: 0; }
+.scores-panel {
+  flex: 1; background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  overflow: hidden; min-width: 0;
+}
+.scores-panel-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; background: #1c2128; border-bottom: 1px solid #30363d;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: #8b949e;
+}
+.scores-panel-hdr .s-summary { font-size: 10px; font-weight: 400; color: #6e7681; }
+.scores-tbl { width: 100%; border-collapse: collapse; }
+.scores-tbl th {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+  color: #6e7681; padding: 4px 10px; text-align: center; border-bottom: 1px solid #21262d;
+}
+.scores-tbl th.bench-col { text-align: left; }
+.scores-tbl td {
+  padding: 3px 10px; font-size: 11.5px;
+  font-family: 'JetBrains Mono', Consolas, monospace; border-bottom: 1px solid #161b22;
+}
+.scores-tbl tr:last-child td { border-bottom: none; }
+.scores-tbl td.bench-name { color: #8b949e; }
+.s-pass  { color: #3fb950; text-align: center; font-weight: 700; }
+.s-fail  { color: #f85149; text-align: center; }
+.s-none  { color: #3d444d; text-align: center; }
+.s-delta-pos { color: #3fb950; text-align: center; font-weight: 700; font-size: 13px; }
+.s-delta-neg { color: #f85149; text-align: center; font-size: 13px; }
+.s-delta-eq  { color: #3d444d; text-align: center; }
+
+/* ── Reflector changes ── */
+.changes-box {
+  background: #161b22; border: 1px solid #30363d; border-left: 3px solid #d29922;
+  border-radius: 6px; padding: 14px 16px;
+  font-size: 13px; line-height: 1.7; color: #c9d1d9;
+}
+.changes-box ul { list-style: none; padding: 0; }
+.changes-box li {
+  padding: 5px 0 5px 16px; position: relative;
+  border-bottom: 1px solid #21262d;
+}
+.changes-box li:last-child { border-bottom: none; }
+.changes-box li::before { content: '•'; position: absolute; left: 0; color: #d29922; }
+
+/* ── Pool view ── */
+.pool-header { font-size: 11px; color: #6e7681; margin-bottom: 14px; }
+.pool-wrap   { display: flex; flex-wrap: wrap; gap: 14px; }
+.pool-card   {
+  background: #161b22; border: 1px solid #30363d; border-radius: 7px;
+  overflow: hidden; flex: 1; min-width: 260px;
+}
+.pool-card-hdr {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 14px; background: #1c2128; border-bottom: 1px solid #30363d;
+}
+.pool-card-title { font-size: 12px; font-weight: 600; color: #e6edf3; }
+.pool-avg   { font-size: 22px; font-weight: 700; font-family: 'JetBrains Mono', Consolas, monospace; }
+.pool-avg.g { color: #3fb950; } .pool-avg.y { color: #d29922; } .pool-avg.r { color: #f85149; }
+.pool-card-body { padding: 10px 14px; }
+.pool-row {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 11.5px; padding: 3px 0; border-bottom: 1px solid #21262d;
+}
+.pool-row:last-child { border-bottom: none; }
+.pool-lbl  { color: #6e7681; min-width: 56px; flex-shrink: 0; }
+.pool-mval { color: #c9d1d9; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11px; }
+.pool-slbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.4px; color: #484f58; padding: 8px 0 4px;
+}
+.pool-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.pool-chip  {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 600;
+}
+.pc-pass { background: #122416; color: #3fb950; border: 1px solid #238636; }
+.pc-fail { background: #2d1515; color: #f85149; border: 1px solid #6e1a1a; }
+.pc-none { background: #1c2128; color: #484f58; border: 1px solid #30363d; }
+
+/* ── Reflector view ── */
+.refl-block {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  margin-bottom: 14px; overflow: hidden;
+}
+.refl-block-hdr {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: #6e7681; padding: 5px 14px; background: #1c2128;
+  border-bottom: 1px solid #30363d;
+}
+.refl-body {
+  padding: 12px 14px;
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-  cursor: default;
+  font-size: 12px; line-height: 1.65; color: #c9d1d9;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 420px; overflow-y: auto;
 }
-.bpill-ok   { background: #1a4228; color: #3fb950; }
-.bpill-fail { background: #3d1a1a; color: #f85149; }
-.reject-note { font-size: 10px; color: #d29922; margin-top: 7px; }
-/* ── Diff controls ───────────────────────────────────────────────────── */
-.diff-bar {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+.rh  { color: #79c0ff; font-weight: 700; }
+.rf  { color: #3d444d; }
+
+/* ── Unified diff ── */
+.diff-meta {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 12px;
 }
-.diff-bar .la { color: #58a6ff; font-size: 12px; font-weight: 600; }
-.diff-bar .arrow { color: #484f58; }
-.diff-bar .lb { color: #a371f7; font-size: 12px; font-weight: 600; }
-.diff-bar .stats { font-size: 11px; color: #6e7681; }
-/* ── Diff content ────────────────────────────────────────────────────── */
-.diff-wrap {
-  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-  overflow: hidden; font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+.diff-meta .stat-del { color: #f85149; }
+.diff-meta .stat-ins { color: #3fb950; }
+.unified-diff {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   font-size: 12.5px; line-height: 1.65;
+  background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+  overflow: hidden;
 }
-.dline { display: flex; }
-.dgutter {
-  width: 34px; flex-shrink: 0; text-align: center; font-size: 10px;
-  color: #484f58; user-select: none; border-right: 1px solid #21262d; padding: 0 3px;
-  display: flex; align-items: center; justify-content: center;
+.u-hunk {
+  background: #1b2333; color: #79c0ff;
+  padding: 2px 14px; font-size: 11px;
+  border-top: 1px solid #21262d; border-bottom: 1px solid #21262d;
 }
-.dcontent { flex: 1; padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
-.d-eq  .dcontent { color: #8b949e; }
-.d-del { background: #3d1a1a; }
-.d-del .dcontent { color: #ffa198; }
-.d-del .dgutter  { background: #3d1a1a; color: #f85149; }
-.d-ins { background: #1a3528; }
-.d-ins .dcontent { color: #7ee787; }
-.d-ins .dgutter  { background: #1a3528; color: #3fb950; }
-.d-skip {
-  background: #161b22; color: #484f58; font-size: 10px; text-align: center;
-  padding: 3px 0; border-top: 1px solid #21262d; border-bottom: 1px solid #21262d;
-  font-family: sans-serif; cursor: pointer; user-select: none;
-}
-.d-skip:hover { color: #8b949e; }
-/* ── Single prompt ───────────────────────────────────────────────────── */
-.prompt-box {
+.u-hunk:first-child { border-top: none; }
+.u-del  { background: #2d1515; color: #ffa198; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+.u-ins  { background: #122416; color: #7ee787; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+.u-ctx  { background: #0d1117; color: #8b949e;  padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+.u-sign { display: inline-block; width: 14px; font-weight: 700; color: inherit; user-select: none; }
+.no-diff {
   background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-  padding: 18px 20px; margin-top: 14px;
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-  font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word;
-  color: #c9d1d9;
+  padding: 14px 16px; font-size: 13px; color: #484f58; font-style: italic;
 }
 </style>
 </head>
 <body>
 <div id="hdr">
   <h1 id="exp-name"></h1>
-  <span class="hint">Click a card to view prompt · Click two cards to diff</span>
+  <span class="hint">Click an iteration to view reflector changes and prompt diff</span>
 </div>
 <div id="body">
   <div id="sidebar"></div>
@@ -199,176 +346,355 @@ body {
     <div id="placeholder">← Select an iteration</div>
     <div id="content" style="display:none"></div>
   </div>
+  <div id="info-sidebar"></div>
 </div>
 <script>
 const DATA = __DATA__;
-let selA = null, selB = null;
+let selId  = null;
+let selTab = 'diff';
 
 document.getElementById('exp-name').textContent = DATA.name;
 
-// ── Sidebar ────────────────────────────────────────────────────────────
+function shortModel(m) { return (m || '').replace('openrouter/', ''); }
+function fmtDuration(s) {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  return h > 0 ? `${h}h ${m}m ${sec}s` : m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+function fmtTokens(n) {
+  if (!n) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return String(n);
+}
+function row(key, val, cls) {
+  return `<div class="info-row"><span class="info-key">${key}</span><span class="info-val${cls ? ' ' + cls : ''}">${val}</span></div>`;
+}
+
+function renderInfoSidebar() {
+  const cfg = DATA.config || {};
+  const sum = DATA.summary || {};
+  const el  = document.getElementById('info-sidebar');
+
+  // ── Config panel ──
+  let cfgRows = '';
+  if (cfg.agent_model)          cfgRows += row('agent model',    esc(shortModel(cfg.agent_model)), 'mono');
+  if (cfg.reflection_lm)        cfgRows += row('reflector',      esc(shortModel(cfg.reflection_lm)), 'mono');
+  if (cfg.diagnoser_model)      cfgRows += row('diagnoser',      esc(shortModel(cfg.diagnoser_model)), 'mono');
+  if (cfg.judge_model)          cfgRows += row('judge',          esc(shortModel(cfg.judge_model)), 'mono');
+  if (cfg.max_calls != null)    cfgRows += row('budget',         `${cfg.max_calls} calls`);
+  if (cfg.workers != null)      cfgRows += row('workers',        cfg.workers);
+  if (cfg.agent_max_iter != null) cfgRows += row('agent max iter', cfg.agent_max_iter);
+  if (cfg.train_minibatch_size != null) cfgRows += row('train batch', cfg.train_minibatch_size);
+  cfgRows += row('val batch', cfg.val_minibatch_size != null ? cfg.val_minibatch_size : 'full');
+  if (cfg.gt != null)           cfgRows += row('ground truth',   cfg.gt ? 'yes' : 'no');
+  if (cfg.background_context)   cfgRows += row('context file',   esc(cfg.background_context), 'mono');
+
+  // ── Summary panel ──
+  let sumRows = '';
+  if (sum.duration_seconds != null) sumRows += row('duration', fmtDuration(sum.duration_seconds));
+  if (sum.total_cost_usd   != null) sumRows += row('total cost', `$${sum.total_cost_usd.toFixed(2)}`, 'info-cost');
+  if (sum.total_tokens     != null) sumRows += row('total tokens', fmtTokens(sum.total_tokens));
+
+  for (const key of ['agents', 'reflector', 'diagnoser', 'scorer']) {
+    const s = sum[key];
+    if (!s || s.calls === 0) continue;
+    sumRows += `<div class="info-sub-hdr">${key} (${s.calls} calls)</div>`;
+    if (s.model) sumRows += row('model', esc(shortModel(s.model)), 'mono');
+    sumRows += row('cost', `$${s.cost_usd.toFixed(2)}`, 'info-cost');
+    sumRows += row('tokens in/out', `${fmtTokens(s.input_tokens)} / ${fmtTokens(s.output_tokens)}`);
+  }
+
+  el.innerHTML =
+    `<div class="info-panel"><div class="info-panel-hdr">Config</div>${cfgRows}</div>` +
+    (sumRows ? `<div class="info-panel"><div class="info-panel-hdr">Summary</div>${sumRows}</div>` : '');
+}
+
 function renderSidebar() {
   const sb = document.getElementById('sidebar');
   sb.innerHTML = '';
   DATA.iterations.forEach(it => {
-    const trainOk = it.train.filter(b => b.success).length;
-    const valOk   = it.val.filter(b => b.success).length;
-    const scoreStr = it.val.length
-      ? `<span class="spill">val ${valOk}/${it.val.length}</span>`
-      : it.train.length
-        ? `<span class="spill">train ${trainOk}/${it.train.length}</span>`
-        : '';
-
-    const isA = selA === it.id, isB = selB === it.id;
     const card = document.createElement('div');
-    card.className = 'card' + (isA ? ' sel-a' : isB ? ' sel-b' : '');
+    card.className = 'card' + (selId === it.id ? ' sel' : '');
     card.innerHTML =
       `<div class="card-top">
          <span class="card-num">Iter ${pad(it.id)}</span>
          <span class="badge b-${it.status}">${it.status}</span>
-         ${isA ? '<span class="sel-dot dot-a">A</span>' : isB ? '<span class="sel-dot dot-b">B</span>' : ''}
        </div>
-       <div class="card-scores">${scoreStr}</div>`;
-    card.addEventListener('click', () => pick(it.id));
+       ${it.val_total ? `<div class="card-score">${it.val_ok}/${it.val_total} val</div>` : ''}`;
+    card.addEventListener('click', () => { selId = it.id; renderSidebar(); renderMain(); });
     sb.appendChild(card);
   });
 }
 
-function pick(id) {
-  if      (selA === id) { selA = selB; selB = null; }
-  else if (selB === id) { selB = null; }
-  else if (selA === null) { selA = id; }
-  else if (selB === null) { selB = id; }
-  else { selA = selB; selB = id; }
-  renderSidebar();
-  renderMain();
-}
-
-// ── Main ───────────────────────────────────────────────────────────────
 function renderMain() {
   const ph = document.getElementById('placeholder');
   const ct = document.getElementById('content');
-  if (selA === null) { ph.style.display = 'flex'; ct.style.display = 'none'; return; }
+  if (selId === null) { ph.style.display = 'flex'; ct.style.display = 'none'; return; }
   ph.style.display = 'none'; ct.style.display = 'block';
-  const itA = DATA.iterations.find(x => x.id === selA);
-  if (selB === null) {
-    renderSingle(ct, itA);
-  } else {
-    renderCompare(ct, itA, DATA.iterations.find(x => x.id === selB));
-  }
+  renderIteration(ct, DATA.iterations.find(x => x.id === selId));
 }
 
-// ── Score box ──────────────────────────────────────────────────────────
-function scoreBox(it, cls) {
-  const trainOk = it.train.filter(b => b.success).length;
-  const valOk   = it.val.filter(b => b.success).length;
+function renderScores(it) {
+  function scorePanel(label, parentMap, childMap) {
+    const keys = Object.keys(parentMap || {});
+    if (!keys.length) return '';
+    const pOk = keys.filter(k => parentMap[k] === 1.0).length;
+    const cOk = childMap ? keys.filter(k => childMap[k] === 1.0).length : null;
+    const summary = cOk !== null
+      ? `${pOk}/${keys.length} → ${cOk}/${keys.length}`
+      : `${pOk}/${keys.length}`;
+    let rows = '';
+    for (const k of keys) {
+      const p = parentMap[k];
+      const c = childMap ? childMap[k] : undefined;
+      const pCell = p === 1.0 ? `<td class="s-pass">1</td>` : `<td class="s-fail">0</td>`;
+      let cCell;
+      if (c === undefined || c === null) cCell = `<td class="s-none">—</td>`;
+      else if (c === 1.0) cCell = `<td class="s-pass">1</td>`;
+      else cCell = `<td class="s-fail">0</td>`;
+      let delta = '';
+      if (c !== undefined && c !== null) {
+        if (c > p)      delta = `<td class="s-delta-pos">↑</td>`;
+        else if (c < p) delta = `<td class="s-delta-neg">↓</td>`;
+        else            delta = `<td class="s-delta-eq">·</td>`;
+      } else {
+        delta = `<td class="s-none"></td>`;
+      }
+      rows += `<tr><td class="bench-name">${esc(k)}</td>${pCell}${cCell}${delta}</tr>`;
+    }
+    return `
+      <div class="scores-panel">
+        <div class="scores-panel-hdr">
+          <span>${label}</span>
+          <span class="s-summary">${summary}</span>
+        </div>
+        <table class="scores-tbl">
+          <thead><tr>
+            <th class="bench-col">Benchmark</th>
+            <th>Parent</th><th>Child</th><th>Δ</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+  const trainPanel = scorePanel('Train', it.parent_train, it.child_train);
+  const valPanel   = scorePanel('Val',   it.parent_val,   it.child_val);
+  if (!trainPanel && !valPanel) return '';
+  return `<div class="section-title">Benchmark scores</div>
+          <div class="scores-wrap">${trainPanel}${valPanel}</div>`;
+}
 
-  const primary = it.val.length
-    ? { ok: valOk, total: it.val.length, label: 'val' }
-    : it.train.length
-      ? { ok: trainOk, total: it.train.length, label: 'train' }
-      : null;
+function renderIteration(el, it) {
+  const tabs = ['diff', 'pool', 'reflector'];
+  const tabBar = `<div class="tab-bar">${
+    tabs.map(t => `<button class="tab${selTab===t?' sel':''}" onclick="selTab='${t}';renderMain()">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join('')
+  }</div>`;
 
-  const pct = primary ? Math.round(primary.ok / primary.total * 100) : null;
-  const color = pct === null ? '#6e7681' : pct >= 50 ? '#3fb950' : '#f85149';
+  let body = '';
 
-  function pills(benches) {
-    return benches.map(b =>
-      `<span class="bpill ${b.success ? 'bpill-ok' : 'bpill-fail'}"
-             title="${b.bench}&#10;${b.stop_reason}&#10;${b.duration_s}s  $${b.cost_usd}"
-       >${b.bench}</span>`
+  if (selTab === 'diff') {
+    if (it.parent_idx != null) {
+      body += `<div class="parent-tag">Parent: Candidate #${it.parent_idx}</div>`;
+    }
+    body += renderScores(it);
+
+    if (it.changes) {
+      body += `<div class="section-title">Reflector changes</div>`;
+      const bullets = it.changes.split(/\n(?=- )/).map(s => s.replace(/^- /, '').trim()).filter(Boolean);
+      if (bullets.length > 1) {
+        body += `<div class="changes-box"><ul>${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`;
+      } else {
+        body += `<div class="changes-box">${esc(it.changes)}</div>`;
+      }
+    }
+
+    body += `<div class="section-title">Prompt diff — parent → child</div>`;
+    if (!it.parent_prompt && !it.child_prompt) {
+      body += `<div class="no-diff">No prompt data for this iteration.</div>`;
+    } else if (it.parent_prompt === it.child_prompt) {
+      body += `<div class="no-diff">Prompts are identical — no changes.</div>`;
+    } else {
+      const diff = lineDiff(it.parent_prompt, it.child_prompt);
+      const dels = diff.filter(d => d.t === 'd').length;
+      const ins  = diff.filter(d => d.t === 'i').length;
+      body += `<div class="diff-meta"><span class="stat-del">−${dels} lines</span><span class="stat-ins">+${ins} lines</span></div>${renderUnifiedDiff(diff)}`;
+    }
+
+  } else if (selTab === 'pool') {
+    body += renderPool(it);
+
+  } else {
+    body += renderReflector(it);
+  }
+
+  el.innerHTML = tabBar + body;
+}
+
+// ── Pool renderer ─────────────────────────────────────────────────────────
+function renderPool(it) {
+  if (!it.pool_json) return `<div class="no-diff">No pool data for this iteration.</div>`;
+  const data = JSON.parse(it.pool_json);
+  const cands = data.candidates || [];
+  if (!cands.length) return `<div class="no-diff">No candidates in pool.</div>`;
+
+  function chips(map) {
+    return Object.entries(map || {}).map(([k, v]) =>
+      `<span class="pool-chip ${v === 1.0 ? 'pc-pass' : 'pc-fail'}">${esc(k)}</span>`
     ).join('');
   }
 
-  const extraSplit = (it.val.length && it.train.length)
-    ? `<div class="big-sub">train ${trainOk}/${it.train.length}</div><div class="bench-row">${pills(it.train)}</div>`
-    : '';
+  let html = `<div class="pool-header">Snapshot ${data.iteration_snapshot ?? '—'} · ${cands.length} candidate${cands.length !== 1 ? 's' : ''}</div>
+              <div class="pool-wrap">`;
 
-  return `<div class="sbox ${cls}">
-    <h3>Iter ${pad(it.id)} — ${it.status.toUpperCase()}</h3>
-    ${primary ? `<div class="big-num" style="color:${color}">${pct}%</div>
-                 <div class="big-sub">${primary.label} ${primary.ok}/${primary.total}</div>` : ''}
-    <div class="bench-row">${pills(it.val.length ? it.val : it.train)}</div>
-    ${extraSplit}
-    ${it.reject_reason ? `<div class="reject-note">⚠ ${esc(it.reject_reason)}</div>` : ''}
-  </div>`;
+  for (const c of cands) {
+    const avg    = c.val_avg != null ? c.val_avg : null;
+    const avgStr = avg != null ? avg.toFixed(2) : '—';
+    const avgCls = avg == null ? '' : avg >= 0.7 ? 'g' : avg >= 0.4 ? 'y' : 'r';
+    const parents = c.parent_ids && c.parent_ids.length ? `#${c.parent_ids.join(', #')}` : 'seed';
+    const pareto  = (c.on_pareto_front || []).length;
+
+    const valChips   = chips(c.val);
+    const trainChips = chips(c.train_subsample);
+
+    html += `<div class="pool-card">
+      <div class="pool-card-hdr">
+        <span class="pool-card-title">Candidate #${c.idx}</span>
+        <span class="pool-avg ${avgCls}">${avgStr}</span>
+      </div>
+      <div class="pool-card-body">
+        <div class="pool-row"><span class="pool-lbl">parents</span><span class="pool-mval">${esc(parents)}</span></div>
+        <div class="pool-row"><span class="pool-lbl">pareto</span><span class="pool-mval">${pareto} benchmark${pareto !== 1 ? 's' : ''}</span></div>
+        ${valChips   ? `<div class="pool-slbl">Val</div><div class="pool-chips">${valChips}</div>` : ''}
+        ${trainChips ? `<div class="pool-slbl">Train sample</div><div class="pool-chips">${trainChips}</div>` : ''}
+      </div>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
 }
 
-// ── Single ─────────────────────────────────────────────────────────────
-function renderSingle(el, it) {
-  el.innerHTML =
-    `<div class="score-grid">${scoreBox(it, 'box-single')}</div>
-     <div class="prompt-box">${esc(it.prompt)}</div>`;
+// ── Reflector renderer ────────────────────────────────────────────────────
+function reflContent(text) {
+  return text.split('\n').map(line => {
+    if (/^## /.test(line))  return `<span class="rh">${esc(line)}</span>`;
+    if (/^```/.test(line))  return `<span class="rf">${esc(line)}</span>`;
+    return esc(line);
+  }).join('\n');
 }
 
-// ── Compare ────────────────────────────────────────────────────────────
-function renderCompare(el, itA, itB) {
-  const diff = lineDiff(itA.prompt, itB.prompt);
-  const dels = diff.filter(d => d.t === 'd').length;
-  const ins  = diff.filter(d => d.t === 'i').length;
+function renderReflector(it) {
+  if (!it.reflector_json) return `<div class="no-diff">No reflector data for this iteration.</div>`;
+  const data = JSON.parse(it.reflector_json);
+  let html = '';
 
-  el.innerHTML =
-    `<div class="score-grid">
-       ${scoreBox(itA, 'box-a')}
-       ${scoreBox(itB, 'box-b')}
-     </div>
-     <div class="diff-bar">
-       <span class="la">A: Iter ${pad(itA.id)} (${itA.status})</span>
-       <span class="arrow">→</span>
-       <span class="lb">B: Iter ${pad(itB.id)} (${itB.status})</span>
-       <span class="stats">−${dels} lines &nbsp; +${ins} lines</span>
-     </div>
-     <div class="diff-wrap">${renderDiff(diff)}</div>`;
+  // Input messages
+  for (const msg of (data.input || [])) {
+    html += `<div class="refl-block">
+      <div class="refl-block-hdr">${esc(msg.role)}</div>
+      <div class="refl-body">${reflContent(msg.content || '')}</div>
+    </div>`;
+  }
+
+  // Output
+  const raw = data.output || '';
+  if (raw) {
+    html += `<div class="section-title" style="margin-top:4px">Output</div>`;
+    let changes = [], prompt = '';
+    try {
+      const out = JSON.parse(raw);
+      changes = out.changes || [];
+      prompt  = out.prompt  || '';
+    } catch(_) {
+      // Fallback: unescaped quotes inside the prompt string break JSON.parse.
+      // Extract changes (clean array before "prompt") and prompt (greedy to last " before }) separately.
+      const cm = raw.match(/"changes"\s*:\s*(\[[\s\S]*?\])\s*,\s*"prompt"/);
+      if (cm) { try { changes = JSON.parse(cm[1]); } catch(__) {} }
+      const pm = raw.match(/"prompt"\s*:\s*"([\s\S]*)"\s*\}\s*$/);
+      if (pm) {
+        prompt = pm[1].replace(/\\(.)/g, (_, c) =>
+          ({n:'\n', t:'\t', r:'\r', '\\':'\\', '"':'"'}[c] || c));
+      }
+    }
+    const items = Array.isArray(changes)
+      ? changes
+      : String(changes).split(/\n(?=- )/).map(s => s.replace(/^- /, '').trim()).filter(Boolean);
+    if (items.length) {
+      html += `<div class="changes-box"><ul>${items.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`;
+    }
+    if (prompt) {
+      html += `<div class="refl-block" style="margin-top:12px">
+        <div class="refl-block-hdr">New prompt</div>
+        <div class="refl-body">${esc(prompt)}</div>
+      </div>`;
+    }
+    if (!items.length && !prompt) {
+      html += `<div class="refl-block"><div class="refl-body">${esc(raw)}</div></div>`;
+    }
+  }
+
+  return html;
 }
 
-function renderDiff(diff) {
+// ── Render unified diff (git-style) ───────────────────────────────────────
+function renderUnifiedDiff(diff) {
   const CTX = 4;
-  const show = new Array(diff.length).fill(false);
-  diff.forEach((d, i) => {
-    if (d.t !== 'e') {
-      for (let j = Math.max(0, i - CTX); j <= Math.min(diff.length - 1, i + CTX); j++)
+  // Assign line numbers
+  const lines = [];
+  let lA = 1, lB = 1;
+  for (const d of diff) {
+    if (d.t === 'e') { lines.push({ t: 'ctx', lA: lA++, lB: lB++, text: d.line }); }
+    else if (d.t === 'd') { lines.push({ t: 'del', lA: lA++, lB: null, text: d.line }); }
+    else               { lines.push({ t: 'ins', lA: null, lB: lB++, text: d.line }); }
+  }
+
+  // Mark lines within CTX of a change
+  const show = new Array(lines.length).fill(false);
+  lines.forEach((l, i) => {
+    if (l.t !== 'ctx') {
+      for (let j = Math.max(0, i - CTX); j <= Math.min(lines.length - 1, i + CTX); j++)
         show[j] = true;
     }
   });
 
-  let html = '', lineN = 1, i = 0;
-  while (i < diff.length) {
-    if (!show[i]) {
-      let j = i;
-      while (j < diff.length && !show[j]) {
-        if (diff[j].t === 'e') lineN++;
-        j++;
-      }
-      const n = j - i;
-      html += `<div class="d-skip">··· ${n} unchanged line${n !== 1 ? 's' : ''} ···</div>`;
-      i = j;
-    } else {
-      const d = diff[i];
-      const cls = d.t === 'e' ? 'd-eq' : d.t === 'd' ? 'd-del' : 'd-ins';
-      const glyph = d.t === 'e' ? lineN++ : d.t === 'd' ? '−' : '+';
-      html += `<div class="dline ${cls}">
-        <span class="dgutter">${glyph}</span>
-        <span class="dcontent">${esc(d.line)}</span>
-      </div>`;
-      i++;
+  // Group into contiguous hunks
+  const hunks = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (!show[i]) { i++; continue; }
+    let j = i;
+    while (j < lines.length && show[j]) j++;
+    hunks.push(lines.slice(i, j));
+    i = j;
+  }
+
+  let html = '<div class="unified-diff">';
+  for (const hunk of hunks) {
+    const firstOld = hunk.find(l => l.lA !== null)?.lA ?? 1;
+    const firstNew = hunk.find(l => l.lB !== null)?.lB ?? 1;
+    const cntOld   = hunk.filter(l => l.t !== 'ins').length;
+    const cntNew   = hunk.filter(l => l.t !== 'del').length;
+    html += `<div class="u-hunk">@@ -${firstOld},${cntOld} +${firstNew},${cntNew} @@</div>`;
+    for (const l of hunk) {
+      if (l.t === 'del') html += `<div class="u-del"><span class="u-sign">-</span>${esc(l.text)}</div>`;
+      else if (l.t === 'ins') html += `<div class="u-ins"><span class="u-sign">+</span>${esc(l.text)}</div>`;
+      else html += `<div class="u-ctx"><span class="u-sign"> </span>${esc(l.text)}</div>`;
     }
   }
+  html += '</div>';
   return html;
 }
 
-// ── Line-level LCS diff ────────────────────────────────────────────────
+// ── LCS line diff ──────────────────────────────────────────────────────────
 function lineDiff(a, b) {
   const al = a ? a.split('\n') : [];
   const bl = b ? b.split('\n') : [];
   const m = al.length, n = bl.length;
-  // DP table
   const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
   for (let i = m - 1; i >= 0; i--)
     for (let j = n - 1; j >= 0; j--)
       dp[i][j] = al[i] === bl[j]
         ? dp[i + 1][j + 1] + 1
         : Math.max(dp[i + 1][j], dp[i][j + 1]);
-  // Traceback
   const out = [];
   let i = 0, j = 0;
   while (i < m || j < n) {
@@ -379,13 +705,12 @@ function lineDiff(a, b) {
   return out;
 }
 
-// ── Utils ──────────────────────────────────────────────────────────────
 function pad(n) { return String(n).padStart(3, '0'); }
 function esc(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ── Init ───────────────────────────────────────────────────────────────
+renderInfoSidebar();
 renderSidebar();
 renderMain();
 </script>
@@ -397,7 +722,6 @@ renderMain();
 def main():
     exp_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("experiments/experiment1")
     data = load_experiment(exp_dir)
-    # Escape < > & so embedded JSON can't be parsed as HTML tags inside <script>
     safe_json = (json.dumps(data, ensure_ascii=False)
                  .replace("<", "\\u003c")
                  .replace(">", "\\u003e")
