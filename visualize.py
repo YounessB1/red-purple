@@ -232,6 +232,7 @@ body {
 .scores-tbl tr:last-child td { border-bottom: none; }
 .scores-tbl td.bench-name { color: #8b949e; }
 .s-pass  { color: #3fb950; text-align: center; font-weight: 700; }
+.s-mid   { color: #d29922; text-align: center; }
 .s-fail  { color: #f85149; text-align: center; }
 .s-none  { color: #3d444d; text-align: center; }
 .s-delta-pos { color: #3fb950; text-align: center; font-weight: 700; font-size: 13px; }
@@ -284,6 +285,7 @@ body {
   font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 600;
 }
 .pc-pass { background: #122416; color: #3fb950; border: 1px solid #238636; }
+.pc-mid  { background: #2d2516; color: #d29922; border: 1px solid #9e6a03; }
 .pc-fail { background: #2d1515; color: #f85149; border: 1px solid #6e1a1a; }
 .pc-none { background: #1c2128; color: #484f58; border: 1px solid #30363d; }
 
@@ -420,7 +422,7 @@ function renderSidebar() {
          <span class="card-num">Iter ${pad(it.id)}</span>
          <span class="badge b-${it.status}">${it.status}</span>
        </div>
-       ${it.val_total ? `<div class="card-score">${it.val_ok}/${it.val_total} val</div>` : ''}`;
+       ${it.val_total ? `<div class="card-score">${it.val_ok}/${it.val_total} solved</div>` : ''}`;
     card.addEventListener('click', () => { selId = it.id; renderSidebar(); renderMain(); });
     sb.appendChild(card);
   });
@@ -435,23 +437,26 @@ function renderMain() {
 }
 
 function renderScores(it) {
+  function scoreCls(v) { return v >= 0.7 ? 's-pass' : v >= 0.35 ? 's-mid' : 's-fail'; }
+  function scoreStr(v) { return v === 1.0 ? '1' : v === 0.0 ? '0' : v.toFixed(2); }
+  function scoreCell(v) {
+    if (v === undefined || v === null) return `<td class="s-none">—</td>`;
+    return `<td class="${scoreCls(v)}">${scoreStr(v)}</td>`;
+  }
+  function avg(map, keys) { return keys.reduce((s, k) => s + (map[k] || 0), 0) / keys.length; }
+
   function scorePanel(label, parentMap, childMap) {
-    const keys = Object.keys(parentMap || {});
+    const keys = Object.keys(parentMap && Object.keys(parentMap).length ? parentMap : (childMap || {}));
     if (!keys.length) return '';
-    const pOk = keys.filter(k => parentMap[k] === 1.0).length;
-    const cOk = childMap ? keys.filter(k => childMap[k] === 1.0).length : null;
-    const summary = cOk !== null
-      ? `${pOk}/${keys.length} → ${cOk}/${keys.length}`
-      : `${pOk}/${keys.length}`;
+    const pAvg = avg(parentMap, keys);
+    const cAvg = childMap ? avg(childMap, keys) : null;
+    const summary = cAvg !== null
+      ? `avg ${pAvg.toFixed(2)} → ${cAvg.toFixed(2)}`
+      : `avg ${pAvg.toFixed(2)}`;
     let rows = '';
     for (const k of keys) {
       const p = parentMap[k];
       const c = childMap ? childMap[k] : undefined;
-      const pCell = p === 1.0 ? `<td class="s-pass">1</td>` : `<td class="s-fail">0</td>`;
-      let cCell;
-      if (c === undefined || c === null) cCell = `<td class="s-none">—</td>`;
-      else if (c === 1.0) cCell = `<td class="s-pass">1</td>`;
-      else cCell = `<td class="s-fail">0</td>`;
       let delta = '';
       if (c !== undefined && c !== null) {
         if (c > p)      delta = `<td class="s-delta-pos">↑</td>`;
@@ -460,7 +465,7 @@ function renderScores(it) {
       } else {
         delta = `<td class="s-none"></td>`;
       }
-      rows += `<tr><td class="bench-name">${esc(k)}</td>${pCell}${cCell}${delta}</tr>`;
+      rows += `<tr><td class="bench-name">${esc(k)}</td>${scoreCell(p)}${scoreCell(c)}${delta}</tr>`;
     }
     return `
       <div class="scores-panel">
@@ -511,6 +516,8 @@ function renderIteration(el, it) {
     body += `<div class="section-title">Prompt diff — parent → child</div>`;
     if (!it.parent_prompt && !it.child_prompt) {
       body += `<div class="no-diff">No prompt data for this iteration.</div>`;
+    } else if (it.parent_prompt && !it.child_prompt) {
+      body += `<div class="no-diff">Skipped — parent scored perfectly.</div>`;
     } else if (it.parent_prompt === it.child_prompt) {
       body += `<div class="no-diff">Prompts are identical — no changes.</div>`;
     } else {
@@ -537,9 +544,11 @@ function renderPool(it) {
   const cands = data.candidates || [];
   if (!cands.length) return `<div class="no-diff">No candidates in pool.</div>`;
 
+  function chipCls(v) { return v >= 0.7 ? 'pc-pass' : v >= 0.35 ? 'pc-mid' : 'pc-fail'; }
+  function chipStr(v) { return v === 1.0 ? '1' : v === 0.0 ? '0' : v.toFixed(2); }
   function chips(map) {
     return Object.entries(map || {}).map(([k, v]) =>
-      `<span class="pool-chip ${v === 1.0 ? 'pc-pass' : 'pc-fail'}">${esc(k)}</span>`
+      `<span class="pool-chip ${chipCls(v)}">${esc(k)} ${chipStr(v)}</span>`
     ).join('');
   }
 

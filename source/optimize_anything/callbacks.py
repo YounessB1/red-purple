@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from gepa.gepa_utils import remove_dominated_programs
+
 from source.optimize_anything import evaluator
 
 
@@ -27,7 +29,11 @@ class TracingCallback:
     def on_iteration_start(self, event) -> None:
         evaluator.set_gepa_iteration(event["iteration"])
         evaluator.set_gepa_role("val")
+        self._current_child_instructions = None
         self._write_pool(event["iteration"], event["state"])
+        seed_evo_path = self._experiment_dir / "iteration_000" / "evolution.json"
+        if not seed_evo_path.exists():
+            self._write_seed_evolution(event["state"])
 
     def on_evaluation_start(self, event) -> None:
         if event.get("capture_traces"):
@@ -40,6 +46,39 @@ class TracingCallback:
 
     def on_iteration_end(self, event) -> None:
         self._write_evolution(event["iteration"], event["state"], event["proposal_accepted"])
+
+    # ── Seed evolution (iteration 000) ────────────────────────────────────
+
+    def _write_seed_evolution(self, state) -> None:
+        iter_dir = self._experiment_dir / "iteration_000"
+        iter_dir.mkdir(parents=True, exist_ok=True)
+
+        seed_prompt = state.program_candidates[0].get("prompt", "") if state.program_candidates else ""
+        val_scores_raw = state.prog_candidate_val_subscores[0] if state.prog_candidate_val_subscores else {}
+        val_scores = {
+            (self._val_ids[vi] if vi < len(self._val_ids) else str(vi)): score
+            for vi, score in val_scores_raw.items()
+        }
+
+        evolution = {
+            "parent": {
+                "candidate_idx": None,
+                "prompt": "",
+                "train": None,
+                "val": None,
+            },
+            "child": {
+                "accepted": True,
+                "candidate_idx": 0,
+                "prompt": seed_prompt,
+                "train": None,
+                "val": val_scores,
+            },
+        }
+        (iter_dir / "evolution.json").write_text(
+            json.dumps(evolution, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        (iter_dir / "ACCEPTED").touch()
 
     # ── Per-iteration evolution snapshot ──────────────────────────────────
 
@@ -120,8 +159,12 @@ class TracingCallback:
                 if sid < len(self._train_ids)
             }
 
+        pruned_mapping = remove_dominated_programs(
+            state.get_pareto_front_mapping(),
+            scores=state.per_program_tracked_scores,
+        )
         candidate_pareto: dict[int, list[str]] = {}
-        for val_idx, cand_set in state.program_at_pareto_front_valset.items():
+        for val_idx, cand_set in pruned_mapping.items():
             bench_id = self._val_ids[val_idx] if val_idx < len(self._val_ids) else str(val_idx)
             for cand_idx in cand_set:
                 candidate_pareto.setdefault(cand_idx, []).append(bench_id)

@@ -65,8 +65,8 @@ def _load_ground_truth(bench_id: str) -> str | None:
     return None
 
 
-def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: bool = False) -> float:
-    """Score agent progress 0.0–0.9 for a failed run."""
+def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: bool = False) -> tuple[float, str]:
+    """Score agent progress 0.0–0.9 for a failed run. Returns (score, reason)."""
     lines = []
     for msg in context_window[1:]:  # skip system prompt
         role = msg.get("role", "")
@@ -97,7 +97,7 @@ def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: 
             score = max(0.0, min(0.9, score))
             gt_tag = " [gt]" if (gt and ground_truth) else ""
             print(f"[judge]{gt_tag} {bench_id} — {score} | {reason}")
-            return score
+            return score, reason
     except Exception as e:
         print(f"[judge] {bench_id} — error: {e}, falling back to 0.0")
-    return 0.0
+    return 0.0, ""

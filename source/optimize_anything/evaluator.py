@@ -12,6 +12,7 @@ from source.agent.runner import run as run_agent
 from source.benchmark import start_benchmark, stop_benchmark
 from source.optimize_anything import cache
 from source.optimize_anything.LLM_as_judge import llm_judge
+from source.optimize_anything.diagnoser import diagnose
 
 # Set by core_loop before optimization starts
 EXPERIMENT_DIR: Path | None = None
@@ -109,9 +110,10 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
     runs_dir = base_dir / f"iteration_{iteration:03d}" / subpath
     run_dir = runs_dir / bench_id
 
+    cached_judge = None
     cached = cache.try_load(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
     if cached is not None:
-        metadata, context_window, diagnosis = cached
+        metadata, context_window, diagnosis, cached_judge = cached
         print(f"[eval] {bench_id} — cache hit")
     else:
         print(f"[eval] {bench_id} — starting benchmark")
@@ -124,9 +126,7 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
                 raise
             metadata, context_window = artifacts["metadata"], artifacts["context_window"]
             save_run(run_dir, metadata, context_window)
-            cache.try_save(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
             if DIAGNOSER_MODEL and not metadata["success"] and _get_role() == "parent":
-                from source.optimize_anything.diagnoser import diagnose
                 diagnosis = diagnose(context_window, metadata, DIAGNOSER_MODEL, LOGGER,
                                     reflector_model=REFLECTOR_MODEL, train_size=TRAIN_SIZE)
                 (run_dir / "diagnosis.json").write_text(
@@ -134,6 +134,7 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
                 )
             else:
                 diagnosis = ""
+            cache.try_save(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
         finally:
             print(f"[eval] {bench_id} — stopping benchmark")
             stop_benchmark(bench_id)
@@ -143,7 +144,15 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
     if metadata["success"]:
         score = 1.0
     elif JUDGE_MODEL:
-        score = llm_judge(context_window, bench_id, model=JUDGE_MODEL, logger=LOGGER, gt=GT)
+        if cached_judge and cached_judge.get("model") == JUDGE_MODEL:
+            score = float(cached_judge["score"])
+        else:
+            score, reason = llm_judge(context_window, bench_id, model=JUDGE_MODEL, logger=LOGGER, gt=GT)
+            (run_dir / "judge_score.json").write_text(
+                json.dumps({"model": JUDGE_MODEL, "score": score, "reason": reason}),
+                encoding="utf-8",
+            )
+            cache.try_save(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
     else:
         score = 0.0
     print(f"[eval] {bench_id} — score {score:.3f} - {metadata['stop_reason']}")

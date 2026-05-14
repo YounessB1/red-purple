@@ -83,9 +83,13 @@ class Logger:
         self._accumulate(self._reflector, "reflector", self._reflector_model,
                          input_tokens, output_tokens, input_text, output_text)
 
-    def log_scorer(self, input_tokens: int, output_tokens: int, input_text, output_text: str) -> None:
-        self._accumulate(self._scorer, "scorer", self._judge_model,
-                         input_tokens, output_tokens, input_text, output_text)
+    def log_scorer(self, input_tokens: int, output_tokens: int, input_text=None, output_text: str = "") -> None:
+        cost = _compute_cost(self._judge_model, input_tokens, output_tokens, self._prices)
+        with self._lock:
+            self._scorer["calls"]         += 1
+            self._scorer["input_tokens"]  += input_tokens
+            self._scorer["output_tokens"] += output_tokens
+            self._scorer["cost_usd"]      += cost
 
     def log_reflector_changes(self, changes: str) -> None:
         iteration = _get_iteration()
