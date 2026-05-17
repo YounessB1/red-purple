@@ -5,8 +5,9 @@ __pycache__/
 .env
 experiments/
 .codex
-lowe_api_implementation.md
+agentic_reflector_plan.md
 OA_INSTRUCTION.md
 todo.txt
-tracing_plan.md
+opencode_traceability.md
+opencode_usage.md
 xbow_solutions

@@ -11,6 +11,7 @@
   "train_minibatch_size": 3,
   "val_minibatch_size": null,
   "reflection_lm": "openrouter/openai/gpt-5",
+  "agentic_reflector": true,
   "use_wandb": false,
   "background_context": "background.txt",
   "experiment_name": ""

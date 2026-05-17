@@ -10,13 +10,13 @@ from pathlib import Path
 from gepa import optimize
 from gepa.strategies.eval_policy import FullEvaluationPolicy
 
-from source.llm import LLM
 from source.optimize_anything import cache, evaluator
 from source.optimize_anything.adapter import RedPurpleAdapter
 from source.optimize_anything.callbacks import TracingCallback
 from source.optimize_anything.dataset import load_dataset
-from source.agent.base_prompt import BASE_PROMPT_SUMMARY
 from source.optimize_anything.logger import Logger
+from source.optimize_anything.agentic_reflector import AgenticReflector
+from source.optimize_anything.reflector import ReflectorLLM, build_reflection_prompt_template
 from source.seed import PROMPT
 
 
@@ -27,68 +27,6 @@ def flush_logger() -> None:
     """Write the experiment summary to disk. Safe to call from a signal handler."""
     if _active_logger is not None:
         _active_logger.write_summary()
-
-
-class ReflectorLLM:
-    """Thin wrapper around LLM that logs reflector token usage to the experiment Logger."""
-
-    def __init__(self, model: str, logger: Logger) -> None:
-        self._llm = LLM(model)
-        self._logger = logger
-
-    def __call__(self, prompt: str | list[dict]) -> str:
-        messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
-        content, input_tokens, output_tokens = self._llm.generate(messages)
-        self._logger.log_reflector(input_tokens, output_tokens, messages, content)
-        return self._extract_prompt(content)
-
-    def _extract_prompt(self, content: str) -> str:
-        # Strip markdown code fences, then find the first {...} block in case the
-        # model added preamble/postamble text around the JSON object.
-        raw = re.sub(r"^```[^\n]*\n|```$", "", content.strip(), flags=re.MULTILINE).strip()
-        if not raw.startswith("{"):
-            m = re.search(r"\{.*\}", raw, re.DOTALL)
-            if m:
-                raw = m.group(0)
-
-        changes = ""
-        new_prompt = ""
-
-        try:
-            data = json.loads(raw)
-            changes   = data.get("changes", "")
-            new_prompt = data.get("prompt", "")
-        except json.JSONDecodeError:
-            # The prompt string can contain unescaped quotes (e.g. XSS payload examples),
-            # which corrupts the outer JSON. Extract the two fields individually.
-
-            # "changes" appears before "prompt" and is typically clean JSON.
-            m = re.search(r'"changes"\s*:\s*(\[.*?\])\s*,\s*"prompt"', raw, re.DOTALL)
-            if m:
-                try:
-                    changes = json.loads(m.group(1))
-                except Exception:
-                    pass
-
-            # "prompt" is the last field, so greedy-match to the final " before closing }
-            m = re.search(r'"prompt"\s*:\s*"(.*)"[\s\n]*\}[\s\n]*$', raw, re.DOTALL)
-            if m:
-                # Decode standard JSON string escapes; bare " chars pass through as-is.
-                new_prompt = re.sub(
-                    r'\\(.)',
-                    lambda x: {'n': '\n', 't': '\t', 'r': '\r', '\\': '\\', '"': '"'}.get(x.group(1), x.group(0)),
-                    m.group(1),
-                )
-
-        if isinstance(changes, list):
-            changes = "\n".join(f"- {c}" for c in changes)
-        if changes:
-            self._logger.log_reflector_changes(changes)
-            print(f"\n[reflector] Changes:\n{changes}\n", flush=True)
-        if not new_prompt:
-            print("[reflector] Warning: could not extract prompt from reflector response", flush=True)
-            return content
-        return new_prompt
 
 
 class SubsetValPolicy(FullEvaluationPolicy):
@@ -125,29 +63,6 @@ def _build_seed_candidate() -> dict[str, str]:
 
 # ── Main entry point ───────────────────────────────────────────────────
 
-def _build_reflection_prompt_template(background_context: str) -> str:
-    return (
-        f"## Domain Context\n\n{background_context}\n\n"
-        "## Fixed Agent Infrastructure (read-only — already injected before the strategy instructions, do NOT reproduce or modify this)\n"
-        f"```\n{BASE_PROMPT_SUMMARY}\n```\n\n"
-        "## Current strategy instructions (this is what you must improve)\n"
-        "```\n<curr_param>\n```\n\n"
-        "The following are failure diagnoses from recent agent runs — each shows what the agent tried, "
-        "where it went wrong, and what it should have done instead:\n"
-        "```\n<side_info>\n```\n\n"
-        "Your task is to write improved strategy instructions for the agent.\n\n"
-        "Focus only on attack strategy, methodology, and domain knowledge — do NOT redefine the role, "
-        "target, tools, or tool call format (those are fixed above).\n\n"
-        "Extract every generalizable insight from the failure diagnoses: vulnerability patterns, "
-        "correct exploitation techniques, step-by-step approaches that would have worked. "
-        "Include specific commands and techniques the agent should try.\n\n"
-        "Respond with a JSON object with exactly two fields:\n"
-        '- "changes": 3-5 bullet points explaining what you changed and why, referencing specific failure patterns\n'
-        '- "prompt": the full new strategy instructions as a string\n\n'
-        "Output only the JSON object, no preamble."
-    )
-
-
 def run(
     experiments_dir: Path,
     max_calls: int,
@@ -156,6 +71,7 @@ def run(
     agent_model: str,
     config_path: Path,
     reflection_lm: str | None,
+    agentic_reflector: bool = False,
     judge_model: str = "",
     diagnoser_model: str = "",
     gt: bool = False,
@@ -223,7 +139,12 @@ def run(
             "wandb_init_kwargs": {"name": experiment_dir.name},
         }
 
-    lm = ReflectorLLM(reflection_lm, logger) if reflection_lm else None
+    if agentic_reflector and reflection_lm:
+        lm = AgenticReflector(reflection_lm, logger, experiment_dir)
+    elif reflection_lm:
+        lm = ReflectorLLM(reflection_lm, logger)
+    else:
+        lm = None
 
     logger.start_logger()
 
@@ -235,7 +156,7 @@ def run(
             adapter=adapter,
             reflection_lm=lm,
             reflection_minibatch_size=train_minibatch_size,
-            reflection_prompt_template=_build_reflection_prompt_template(background_context) if background_context else None,
+            reflection_prompt_template=build_reflection_prompt_template(background_context) if background_context else None,
             max_metric_calls=max_calls,
             run_dir=str(experiment_dir / "oa_state"),
             callbacks=callbacks,
