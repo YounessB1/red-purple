@@ -638,8 +638,9 @@ function renderReflector(it) {
   const data = JSON.parse(it.reflector_json);
   let html = '';
 
-  // Input messages
-  for (const msg of (data.input || [])) {
+  // Input — may be a string (agentic reflector) or an array of messages (LLM reflector)
+  const inputMsgs = Array.isArray(data.input) ? data.input : (data.input ? [{role: 'user', content: data.input}] : []);
+  for (const msg of inputMsgs) {
     html += `<div class="refl-block">
       <div class="refl-block-hdr">${esc(msg.role)}</div>
       <div class="refl-body">${reflContent(msg.content || '')}</div>
