@@ -56,8 +56,10 @@ class Logger:
     # ── Accumulator methods ────────────────────────────────────────────────
     def _accumulate(self, bucket: dict, tag: str, model: str,
                     input_tokens: int, output_tokens: int,
-                    input_text, output_text: str) -> None:
-        cost = _compute_cost(model, input_tokens, output_tokens, self._prices)
+                    input_text, output_text: str,
+                    cost: float | None = None) -> None:
+        if cost is None:
+            cost = _compute_cost(model, input_tokens, output_tokens, self._prices)
         with self._lock:
             bucket["calls"]         += 1
             bucket["input_tokens"]  += input_tokens
@@ -79,9 +81,17 @@ class Logger:
             encoding="utf-8",
         )
 
-    def log_reflector(self, input_tokens: int, output_tokens: int, input_text, output_text: str) -> None:
+    def log_reflector(self, input_tokens: int, output_tokens: int, input_text, output_text: str,
+                      cost: float | None = None, steps: list | None = None) -> None:
         self._accumulate(self._reflector, "reflector", self._reflector_model,
-                         input_tokens, output_tokens, input_text, output_text)
+                         input_tokens, output_tokens, input_text, output_text, cost=cost)
+        if steps is not None:
+            iteration = _get_iteration()
+            call_dir = self._log_dir / f"iteration_{iteration:03d}"
+            call_dir.mkdir(parents=True, exist_ok=True)
+            (call_dir / "agentic_reflector_steps.json").write_text(
+                json.dumps(steps, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
 
     def log_scorer(self, input_tokens: int, output_tokens: int, input_text=None, output_text: str = "") -> None:
         cost = _compute_cost(self._judge_model, input_tokens, output_tokens, self._prices)

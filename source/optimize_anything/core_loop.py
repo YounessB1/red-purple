@@ -1,7 +1,6 @@
 """Core GEPA optimization loop — all logic lives here."""
 
 import json
-import os
 import random
 import re
 import shutil
@@ -75,7 +74,6 @@ def run(
     judge_model: str = "",
     diagnoser_model: str = "",
     gt: bool = False,
-    use_wandb: bool = False,
     train_minibatch_size: int | None = None,
     val_minibatch_size: int | None = None,
     experiment_name: str | None = None,
@@ -128,17 +126,6 @@ def run(
     print(f"[red-purple] Budget: {max_calls} calls, {workers} workers")
     print(f"[red-purple] Output: {experiment_dir}\n")
 
-    wandb_kwargs = {}
-    if use_wandb:
-        wandb_api_key = os.environ.get("WANDB_API_KEY")
-        if not wandb_api_key:
-            raise ValueError("use_wandb=True but WANDB_API_KEY is not set in .env")
-        wandb_kwargs = {
-            "use_wandb": True,
-            "wandb_api_key": wandb_api_key,
-            "wandb_init_kwargs": {"name": experiment_dir.name},
-        }
-
     if agentic_reflector and reflection_lm:
         lm = AgenticReflector(reflection_lm, logger, experiment_dir)
     elif reflection_lm:
@@ -167,7 +154,6 @@ def run(
             use_cloudpickle=True,
             cache_evaluation=True,
             seed=0,
-            **wandb_kwargs,
         )
     finally:
         logger.stop_logger()

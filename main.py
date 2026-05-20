@@ -70,7 +70,6 @@ def main():
         config_path=CONFIG_PATH,
         reflection_lm=cfg.get("reflection_lm"),
         agentic_reflector=cfg.get("agentic_reflector", False),
-        use_wandb=cfg.get("use_wandb", False),
         experiment_name=cfg.get("experiment_name"),
         background_context=_load_background_context(cfg.get("background_context"), REPO_ROOT),
     )

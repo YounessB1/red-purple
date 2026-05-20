@@ -70,21 +70,27 @@ def load_experiment(exp_dir: Path) -> dict:
                 json.loads(refl_path.read_text(encoding="utf-8")), indent=2
             )
 
+        reflector_steps = ""
+        steps_path = iter_dir / "agentic_reflector_steps.json"
+        if steps_path.exists():
+            reflector_steps = steps_path.read_text(encoding="utf-8")
+
         iterations.append({
-            "id":             num,
-            "status":         status,
-            "parent_prompt":  parent_prompt,
-            "child_prompt":   child_prompt,
-            "changes":        changes,
-            "val_ok":         val_ok,
-            "val_total":      val_total,
-            "parent_train":   parent_train,
-            "parent_val":     parent_val,
-            "child_train":    child_train,
-            "child_val":      child_val,
-            "parent_idx":     parent_idx,
-            "pool_json":      pool_json,
-            "reflector_json": reflector_json,
+            "id":               num,
+            "status":           status,
+            "parent_prompt":    parent_prompt,
+            "child_prompt":     child_prompt,
+            "changes":          changes,
+            "val_ok":           val_ok,
+            "val_total":        val_total,
+            "parent_train":     parent_train,
+            "parent_val":       parent_val,
+            "child_train":      child_train,
+            "child_val":        child_val,
+            "parent_idx":       parent_idx,
+            "pool_json":        pool_json,
+            "reflector_json":   reflector_json,
+            "reflector_steps":  reflector_steps,
         })
 
     config = {}
@@ -335,6 +341,39 @@ body {
   background: #161b22; border: 1px solid #30363d; border-radius: 8px;
   padding: 14px 16px; font-size: 13px; color: #484f58; font-style: italic;
 }
+
+/* ── Reasoning steps ── */
+.rsn-feed { display: flex; flex-direction: column; gap: 6px; }
+.rsn-step { border-radius: 6px; overflow: hidden; background: #161b22; }
+.rsn-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  padding: 4px 12px;
+}
+.rsn-body {
+  padding: 9px 14px; font-size: 12.5px; line-height: 1.7; color: #c9d1d9;
+  white-space: pre-wrap; word-break: break-word; background: #161b22;
+}
+
+/* thinking — light blue */
+.rsn-step-thinking { border: 1px solid #58a6ff; }
+.rsn-step-thinking .rsn-label { color: #58a6ff; border-bottom: 1px solid #58a6ff; }
+.rsn-step-thinking .rsn-body strong { color: #79c0ff; }
+
+/* text — green */
+.rsn-step-text { border: 1px solid #3fb950; }
+.rsn-step-text .rsn-label { color: #3fb950; border-bottom: 1px solid #3fb950; }
+
+/* tool — orange */
+.rsn-step-tool { border: 1px solid #d29922; }
+.rsn-step-tool .rsn-label { color: #d29922; border-bottom: 1px solid #d29922; }
+.rsn-step-tool .rsn-body  {
+  font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px;
+}
+.rsn-tool-name { color: #d29922; font-weight: 700; margin-right: 10px; }
+.rsn-params { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.rsn-param-row { display: flex; gap: 8px; font-size: 11.5px; }
+.rsn-param-key { color: #6e7681; flex-shrink: 0; }
+.rsn-param-val { color: #c9d1d9; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -490,7 +529,7 @@ function renderScores(it) {
 }
 
 function renderIteration(el, it) {
-  const tabs = ['diff', 'pool', 'reflector'];
+  const tabs = ['diff', 'pool', 'reflector', 'reasoning'];
   const tabBar = `<div class="tab-bar">${
     tabs.map(t => `<button class="tab${selTab===t?' sel':''}" onclick="selTab='${t}';renderMain()">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join('')
   }</div>`;
@@ -530,8 +569,11 @@ function renderIteration(el, it) {
   } else if (selTab === 'pool') {
     body += renderPool(it);
 
-  } else {
+  } else if (selTab === 'reflector') {
     body += renderReflector(it);
+
+  } else {
+    body += renderReasoning(it);
   }
 
   el.innerHTML = tabBar + body;
@@ -641,6 +683,60 @@ function renderReflector(it) {
     }
   }
 
+  return html;
+}
+
+// ── Reasoning steps renderer ─────────────────────────────────────────────
+function renderReasoning(it) {
+  if (!it.reflector_steps) return `<div class="no-diff">No agentic reflector steps for this iteration.</div>`;
+  let steps;
+  try { steps = JSON.parse(it.reflector_steps); } catch(_) {
+    return `<div class="no-diff">Could not parse steps data.</div>`;
+  }
+  if (!Array.isArray(steps) || !steps.length) return `<div class="no-diff">No steps recorded.</div>`;
+
+  // Strip final output message (the JSON blob the agent writes as its answer)
+  if (steps[steps.length - 1].type === 'text' &&
+      steps[steps.length - 1].text.trimStart().startsWith('{')) {
+    steps = steps.slice(0, -1);
+  }
+
+  function shortPath(p) {
+    const m = (p || '').match(/iteration_\d+\/(.*)/);
+    return m ? m[1] : p;
+  }
+  function fmtThinking(text) {
+    return esc(text).replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  }
+
+  let html = '<div class="rsn-feed">';
+  for (const step of steps) {
+    if (step.type === 'thinking') {
+      html += `<div class="rsn-step rsn-step-thinking">
+        <div class="rsn-label">Thinking</div>
+        <div class="rsn-body">${fmtThinking(step.text)}</div>
+      </div>`;
+    } else if (step.type === 'text') {
+      html += `<div class="rsn-step rsn-step-text">
+        <div class="rsn-label">Text</div>
+        <div class="rsn-body">${esc(step.text)}</div>
+      </div>`;
+    } else if (step.type === 'tool') {
+      const name = step.name || '?';
+      const inp  = step.input || {};
+      const params = Object.entries(inp)
+        .filter(([k, v]) => v !== null && v !== undefined && v !== '' && v !== 0)
+        .map(([k, v]) => {
+          const display = (k === 'filePath' || k === 'path') ? shortPath(String(v)) : String(v);
+          return `<div class="rsn-param-row"><span class="rsn-param-key">${esc(k)}</span><span class="rsn-param-val">${esc(display)}</span></div>`;
+        }).join('');
+      html += `<div class="rsn-step rsn-step-tool">
+        <div class="rsn-label">Tool</div>
+        <div class="rsn-body"><span class="rsn-tool-name">${esc(name)}</span>${params ? `<div class="rsn-params">${params}</div>` : ''}</div>
+      </div>`;
+    }
+  }
+  html += '</div>';
   return html;
 }
 
