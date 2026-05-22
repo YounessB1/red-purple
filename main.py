@@ -34,15 +34,6 @@ def _on_sigint(signum, frame):
         os._exit(130)
 
 
-def _load_background_context(value: str | None, base: Path) -> str | None:
-    if not value:
-        return None
-    path = base / value
-    if path.exists():
-        return path.read_text(encoding="utf-8").strip()
-    return value
-
-
 def main():
     signal.signal(signal.SIGINT, _on_sigint)
 
@@ -69,9 +60,7 @@ def main():
         val_minibatch_size=cfg.get("val_minibatch_size"),
         config_path=CONFIG_PATH,
         reflection_lm=cfg.get("reflection_lm"),
-        agentic_reflector=cfg.get("agentic_reflector", False),
         experiment_name=cfg.get("experiment_name"),
-        background_context=_load_background_context(cfg.get("background_context"), REPO_ROOT),
     )
 
 

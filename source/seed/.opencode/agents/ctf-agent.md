@@ -10,4 +10,5 @@ tools:
 permission:
   bash: "allow"
   edit: "allow"
+  write: "allow"
 ---

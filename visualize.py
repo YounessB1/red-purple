@@ -60,7 +60,7 @@ def load_experiment(exp_dir: Path) -> dict:
         if pool_path.exists():
             pool_display = json.loads(pool_path.read_text(encoding="utf-8"))
             for c in pool_display.get("candidates", []):
-                c.pop("prompt", None)
+                c.pop("files", None)
             pool_json = json.dumps(pool_display, indent=2)
 
         reflector_json = ""

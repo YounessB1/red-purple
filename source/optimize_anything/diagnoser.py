@@ -16,19 +16,6 @@ def _load_context_limit(model: str) -> int | None:
         return None
 
 
-def _format_trace(context_window: list[dict]) -> str:
-    parts = []
-    for msg in context_window:
-        if msg.get("role") == "system":
-            continue
-        role = msg.get("role", "unknown")
-        content = str(msg.get("content", ""))
-        if len(content) > 1000:
-            content = content[:1000] + "...(truncated)"
-        parts.append(f"[{role}]\n{content}")
-    return "\n\n".join(parts)
-
-
 def diagnose(
     context_window: list[dict],
     metadata: dict,
@@ -43,7 +30,7 @@ def diagnose(
         word_limit = int(per_diagnosis_tokens * 0.75)
         char_limit = per_diagnosis_tokens * 4
 
-        trace = _format_trace(context_window)
+        trace = json.dumps(context_window, indent=2)
         prompt = DIAGNOSER_PROMPT.format(
             benchmark_id=metadata.get("benchmark_id", metadata.get("run_id", "unknown")),
             outcome="SUCCESS" if metadata.get("success") else "FAILURE",

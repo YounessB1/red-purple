@@ -11,16 +11,23 @@ import json
 import shutil
 from pathlib import Path
 
-from source.seed import PROMPT
+from source.optimize_anything.utils import candidate_hash
 
 # Set by core_loop before optimization starts
 CACHE_DIR: Path | None = None
 
-# Only seed-candidate evals are cached.
-_SEED_CANDIDATE = {"prompt": PROMPT}
-SEED_CANDIDATE_HASH = hashlib.sha256(
-    json.dumps(_SEED_CANDIDATE, sort_keys=True).encode()
-).hexdigest()
+_SEED_DIR = Path(__file__).resolve().parents[2] / "source" / "seed"
+
+
+def _compute_seed_hash() -> str:
+    seed_files = {}
+    for f in sorted(_SEED_DIR.rglob("*")):
+        if f.is_file() and f.name != ".gitkeep":
+            seed_files[str(f.relative_to(_SEED_DIR))] = f.read_text(encoding="utf-8")
+    return candidate_hash({"files": candidate_hash(seed_files)})
+
+
+SEED_CANDIDATE_HASH = _compute_seed_hash()
 
 
 def try_load(

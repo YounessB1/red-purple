@@ -185,7 +185,7 @@ class TracingCallback:
                 "on_pareto_front": sorted(candidate_pareto.get(idx, [])),
                 "val": val_scores,
                 "train_subsample": candidate_train.get(idx),
-                "prompt": candidate.get("prompt", ""),
+                "files": candidate.get("files", ""),
             })
 
         pool_dir = self._experiment_dir / f"iteration_{iteration:03d}"

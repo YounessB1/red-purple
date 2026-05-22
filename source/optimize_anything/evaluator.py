@@ -1,6 +1,5 @@
 """GEPA evaluator — scores a candidate seed against a single benchmark."""
 
-import hashlib
 import json
 import threading
 from pathlib import Path
@@ -13,6 +12,7 @@ from source.benchmark import start_benchmark, stop_benchmark
 from source.optimize_anything import cache
 from source.optimize_anything.LLM_as_judge import llm_judge
 from source.optimize_anything.diagnoser import diagnose
+from source.optimize_anything.utils import candidate_hash
 
 # Set by core_loop before optimization starts
 EXPERIMENT_DIR: Path | None = None
@@ -33,6 +33,10 @@ _gepa_iteration_lock = threading.Lock()
 # Role tracking — "parent" or "child" within a train iteration, "val" otherwise
 _gepa_role: str = "val"
 _gepa_role_lock = threading.Lock()
+
+# Current candidate — set during evaluate() so the reflector can access it
+_current_candidate: dict = {}
+_current_candidate_lock = threading.Lock()
 
 
 def configure_runtime(
@@ -84,6 +88,17 @@ def _get_role() -> str:
         return _gepa_role
 
 
+def set_current_candidate(candidate: dict) -> None:
+    global _current_candidate
+    with _current_candidate_lock:
+        _current_candidate = candidate
+
+
+def get_current_candidate() -> dict:
+    with _current_candidate_lock:
+        return _current_candidate
+
+
 def save_run(run_dir: Path, metadata: dict, context_window: list) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "metadata.json").write_text(
@@ -99,8 +114,9 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
 
     score is 1.0 on flag capture, 0.0 otherwise.
     """
+    set_current_candidate(candidate)
     bench_id = example["benchmark_id"]
-    c_hash = _candidate_hash(candidate)
+    c_hash = candidate_hash(candidate)
     iteration = _get_iteration()
 
     split = example.get("split", "unknown")
@@ -167,11 +183,41 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
     return score, side_info
 
 
+_WORKSPACE_AGENT = Path(__file__).resolve().parents[2] / "workspace" / "agent"
+_SEED_DIR = Path(__file__).resolve().parents[2] / "source" / "seed"
+
+
+def _resolve_candidate(candidate: dict) -> dict:
+    """Replace hash-string files ref with the stored files dict for that hash."""
+    from source.optimize_anything import candidate_store
+    files_ref = candidate.get("files")
+    if isinstance(files_ref, dict):
+        return candidate  # already resolved
+    if isinstance(files_ref, str):
+        stored = candidate_store.load(files_ref)
+        if stored is not None:
+            return {**candidate, "files": stored}
+    # Fallback: read directly from workspace/agent/ (seed before store is populated)
+    src = _WORKSPACE_AGENT if (
+        _WORKSPACE_AGENT.exists()
+        and any(f for f in _WORKSPACE_AGENT.rglob("*") if f.is_file() and f.name != ".gitkeep")
+    ) else _SEED_DIR
+    files = {}
+    for f in sorted(src.rglob("*")):
+        if not f.is_file() or f.name == ".gitkeep":
+            continue
+        try:
+            files[str(f.relative_to(src))] = f.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    return {**candidate, "files": files}
+
+
 def _run_via_server(target: str, candidate: dict, max_iter: int, model: str) -> dict:
     params = urllib.parse.urlencode({
         "target": target,
         "max_iter": max_iter,
-        "seed_json": json.dumps(candidate),
+        "seed_json": json.dumps(_resolve_candidate(candidate)),
         "model": model,
     })
     req = urllib.request.Request(
@@ -189,6 +235,3 @@ def _run_via_server(target: str, candidate: dict, max_iter: int, model: str) -> 
         raise
 
 
-def _candidate_hash(candidate: dict[str, str]) -> str:
-    raw = json.dumps(candidate, sort_keys=True)
-    return hashlib.sha256(raw.encode()).hexdigest()

@@ -67,16 +67,7 @@ def _load_ground_truth(bench_id: str) -> str | None:
 
 def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: bool = False) -> tuple[float, str]:
     """Score agent progress 0.0–0.9 for a failed run. Returns (score, reason)."""
-    lines = []
-    for msg in context_window[1:]:  # skip system prompt
-        role = msg.get("role", "")
-        content = str(msg.get("content", ""))
-        if role == "assistant":
-            lines.append(f"[AGENT]\n{content}")
-        elif role == "user":
-            lines.append(f"[RESULT]\n{content}")
-
-    transcript = "\n\n".join(lines)
+    transcript = json.dumps(context_window, indent=2)
 
     ground_truth = _load_ground_truth(bench_id) if gt else None
     if gt and ground_truth:

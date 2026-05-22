@@ -9,15 +9,16 @@ from pathlib import Path
 from gepa import optimize
 from gepa.strategies.eval_policy import FullEvaluationPolicy
 
-from source.optimize_anything import cache, evaluator
+from source.optimize_anything import cache, candidate_store, evaluator
 from source.optimize_anything.adapter import RedPurpleAdapter
 from source.optimize_anything.callbacks import TracingCallback
 from source.optimize_anything.dataset import load_dataset
 from source.optimize_anything.logger import Logger
 from source.optimize_anything.agentic_reflector import AgenticReflector
-from source.optimize_anything.reflector import ReflectorLLM, build_reflection_prompt_template
-from source.seed import PROMPT
+from source.optimize_anything.utils import candidate_hash
 
+_SEED_DIR = Path(__file__).resolve().parents[2] / "source" / "seed"
+_WORKSPACE = Path(__file__).resolve().parents[2] / "workspace"
 
 _active_logger: "Logger | None" = None
 
@@ -54,10 +55,25 @@ def _next_experiment_dir(base: Path) -> Path:
     return base / f"experiment{n}"
 
 
-def _build_seed_candidate() -> dict[str, str]:
-    return {
-        "prompt": PROMPT,
-    }
+def _build_seed_candidate() -> dict:
+    seed_files = {}
+    for f in sorted(_SEED_DIR.rglob("*")):
+        if f.is_file() and f.name != ".gitkeep":
+            seed_files[str(f.relative_to(_SEED_DIR))] = f.read_text(encoding="utf-8")
+    # Populate workspace/agent/ from seed (preserve directory structure, skip .gitkeep)
+    agent_dir = _WORKSPACE / "agent"
+    if agent_dir.exists():
+        shutil.rmtree(agent_dir)
+    for d in sorted(_SEED_DIR.rglob("*")):
+        if d.is_dir():
+            (agent_dir / d.relative_to(_SEED_DIR)).mkdir(parents=True, exist_ok=True)
+    for rel, content in seed_files.items():
+        dest = agent_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8")
+    files_hash = candidate_hash(seed_files)
+    candidate_store.store(files_hash, seed_files)
+    return {"files": files_hash}
 
 
 # ── Main entry point ───────────────────────────────────────────────────
@@ -70,14 +86,12 @@ def run(
     agent_model: str,
     config_path: Path,
     reflection_lm: str | None,
-    agentic_reflector: bool = False,
     judge_model: str = "",
     diagnoser_model: str = "",
     gt: bool = False,
     train_minibatch_size: int | None = None,
     val_minibatch_size: int | None = None,
     experiment_name: str | None = None,
-    background_context: str | None = None,
 ) -> None:
     """Run the full GEPA optimization loop."""
     # Resolve experiment directory
@@ -110,6 +124,7 @@ def run(
         logger=logger,
     )
     cache.CACHE_DIR = experiments_dir / ".eval_cache"
+    candidate_store.configure(experiment_dir / ".candidates")
 
     # Load dataset
     train, val = load_dataset()
@@ -126,12 +141,7 @@ def run(
     print(f"[red-purple] Budget: {max_calls} calls, {workers} workers")
     print(f"[red-purple] Output: {experiment_dir}\n")
 
-    if agentic_reflector and reflection_lm:
-        lm = AgenticReflector(reflection_lm, logger, experiment_dir)
-    elif reflection_lm:
-        lm = ReflectorLLM(reflection_lm, logger)
-    else:
-        lm = None
+    lm = AgenticReflector(reflection_lm, logger, experiment_dir) if reflection_lm else None
 
     logger.start_logger()
 
@@ -143,7 +153,7 @@ def run(
             adapter=adapter,
             reflection_lm=lm,
             reflection_minibatch_size=train_minibatch_size,
-            reflection_prompt_template=build_reflection_prompt_template(background_context) if background_context else None,
+            reflection_prompt_template=None,
             max_metric_calls=max_calls,
             run_dir=str(experiment_dir / "oa_state"),
             callbacks=callbacks,
