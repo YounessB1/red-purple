@@ -12,3 +12,6 @@ opencode_traceability.md
 opencode_usage.md
 xbow_solutions
 challenges_tools_needed.txt
+test/
+test.py
+test2.py

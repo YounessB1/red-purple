@@ -1,112 +1,278 @@
-"""Agent runner — executes a seed module and traces the run.
+"""Agent runner — spawns an OpenCode CTF agent per run."""
 
-Accepts any seed module/namespace that exposes: TOOL_SCHEMAS, TOOLS, PROMPT.
-Defaults to source.agent.seed when no seed is provided.
-"""
-
-import functools
+import json
+import re
 import shutil
+import sqlite3
+import subprocess
 import tempfile
 import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
-from tqdm import tqdm
-
-from source import seed as default_seed
-from source.agent import base_prompt as agent_base, tools as agent_tools
-from source.llm import LLM
-from source.agent.utils import parse_tool_calls, run_tool
-from source.agent import compactor, extractor
-from source.tracer import Tracer
-
-RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 
 
-def _build_prompt(target: str, seed_instructions: str) -> str:
-    return agent_base.BASE_PROMPT.replace("{target}", target) + seed_instructions
+def _materialize_files(workdir: Path, files: dict) -> None:
+    for rel_path, content in files.items():
+        dest = workdir / rel_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8")
+
+
+def _inject_prompt(workdir: Path) -> None:
+    """Append prompt.md content as the body of ctf-agent.md (after frontmatter)."""
+    prompt_path = workdir / "prompt.md"
+    agent_md_path = workdir / ".opencode" / "agents" / "ctf-agent.md"
+    if not prompt_path.exists() or not agent_md_path.exists():
+        return
+    prompt_content = prompt_path.read_text(encoding="utf-8")
+    agent_md = agent_md_path.read_text(encoding="utf-8")
+    parts = agent_md.split("---", 2)
+    if len(parts) >= 3:
+        agent_md_path.write_text(f"---{parts[1]}---\n\n{prompt_content}", encoding="utf-8")
+
+
+def _prepend_target(workdir: Path, target: str) -> None:
+    agents_md = workdir / "AGENTS.md"
+    existing = agents_md.read_text(encoding="utf-8").strip() if agents_md.exists() else ""
+    content = f"# Target\nThe target URL is: {target}"
+    if existing:
+        content += f"\n\n{existing}"
+    agents_md.write_text(content + "\n", encoding="utf-8")
+
+
+def _trace_session(workdir: Path) -> tuple[dict, list]:
+    """Read token usage and conversation parts from OpenCode's SQLite DB."""
+    db_path = Path.home() / ".local/share/opencode/opencode.db"
+    try:
+        db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except Exception:
+        return {}, []
+
+    try:
+        row = db.execute(
+            "SELECT id, cost, tokens_input, tokens_output FROM session "
+            "WHERE directory=? ORDER BY time_created DESC LIMIT 1",
+            (str(workdir),),
+        ).fetchone()
+        if not row:
+            return {}, []
+
+        session_id, cost, input_tokens, output_tokens = row
+
+        parts = db.execute(
+            "SELECT data FROM part WHERE session_id=? ORDER BY time_created",
+            (session_id,),
+        ).fetchall()
+
+        steps: list[dict] = []
+        all_text_parts: list[str] = []
+        current_step: dict | None = None
+        step_num = 0
+
+        for (raw_part,) in parts:
+            try:
+                part = json.loads(raw_part)
+            except Exception:
+                continue
+
+            ptype = part.get("type")
+
+            if ptype == "step-start":
+                step_num += 1
+                current_step = {
+                    "step": step_num,
+                    "thought": None,
+                    "tool": None,
+                    "input": None,
+                    "output": None,
+                    "truncated": False,
+                    "tokens": None,
+                    "cost_usd": None,
+                    "finish_reason": None,
+                }
+
+            elif ptype == "step-finish" and current_step is not None:
+                current_step["finish_reason"] = part.get("reason")
+                tok = part.get("tokens", {})
+                cache = tok.get("cache", {})
+                current_step["tokens"] = {
+                    "input": tok.get("input", 0),
+                    "output": tok.get("output", 0),
+                    "cache_read": cache.get("read", 0),
+                    "cache_write": cache.get("write", 0),
+                }
+                current_step["cost_usd"] = part.get("cost")
+                steps.append(current_step)
+                current_step = None
+
+            elif ptype == "text" and part.get("text", "").strip():
+                text = part["text"].strip()
+                all_text_parts.append(text)
+                if current_step is not None:
+                    current_step["thought"] = (
+                        current_step["thought"] + "\n\n" + text
+                        if current_step["thought"] else text
+                    )
+
+            elif ptype == "reasoning" and part.get("text", "").strip():
+                text = part["text"].strip()
+                all_text_parts.append(text)
+                if current_step is not None:
+                    block = f"<thinking>\n{text}\n</thinking>"
+                    current_step["thought"] = (
+                        block + "\n\n" + current_step["thought"]
+                        if current_step["thought"] else block
+                    )
+
+            elif ptype == "tool" and current_step is not None:
+                state = part.get("state", {}) if isinstance(part.get("state"), dict) else {}
+                output = str(state.get("output", ""))
+                truncated = bool((state.get("metadata") or {}).get("truncated", False))
+                current_step["tool"] = part.get("tool", "?")
+                current_step["input"] = state.get("input", {})
+                current_step["output"] = output or None
+                current_step["truncated"] = truncated
+                if output:
+                    all_text_parts.append(output)
+
+        tool_calls = sum(1 for s in steps if s["tool"] is not None)
+        llm_calls = len(steps)
+
+        extras = {
+            "all_text": "\n".join(all_text_parts),
+            "total_input_tokens": input_tokens or 0,
+            "total_output_tokens": output_tokens or 0,
+            "total_tokens": (input_tokens or 0) + (output_tokens or 0),
+            "total_cost_usd": round(cost or 0, 6),
+            "llm_calls": llm_calls,
+            "tool_calls": tool_calls,
+            "context_messages": len(steps),
+        }
+        return extras, steps
+
+    finally:
+        db.close()
+
+
+def _find_flag(text: str) -> str | None:
+    m = re.search(r'(?i)(flag\{[^}]{8,}\})', text)
+    return m.group(1) if m else None
+
+
+def _read_agent_field(files: dict, field: str) -> str:
+    """Extract a frontmatter field value from ctf-agent.md."""
+    content = files.get(".opencode/agents/ctf-agent.md", "")
+    m = re.search(rf'(?m)^{field}:\s*"?([^"\n]+)"?', content)
+    return m.group(1).strip() if m else ""
 
 
 def run(
     target: str,
-    model: str,
     run_id: str | None = None,
-    prompt: str | None = None,
-    max_iter: int = 50,
-    runs_dir: Path | None = None,
+    candidate: dict | None = None,
     cancel_event: threading.Event | None = None,
-) -> dict:
-    """Run the agent loop. Returns (metadata, context_window)."""
+) -> tuple[dict, list]:
+    """Run the OpenCode CTF agent. Returns (metadata, context_window)."""
     run_id = run_id or f"run-{uuid4().hex[:8]}"
-    prompt = _build_prompt(target, prompt or default_seed.PROMPT)
-    runs_dir = runs_dir or RUNS_DIR
-
     workdir = Path(tempfile.mkdtemp(prefix=f"agent_{run_id}_"))
-    tools = {
-        "terminal_execute": functools.partial(agent_tools.terminal_execute, cwd=str(workdir)),
-        "finish": agent_tools.finish,
-    }
+    started_at = datetime.now(timezone.utc).isoformat()
 
-    tracer = Tracer(run_id=run_id, target=target, task=prompt,
-                    model=model,
-                    runs_dir=runs_dir, max_iterations=max_iter)
-    llm = LLM(model=model)
+    print(f"[red-purple] {run_id} | {target}", flush=True)
 
-    history = [
-        {"role": "system", "content": prompt},
-    ]
-
-    print(f"[red-purple] {run_id} | {target}\n")
+    files = (candidate or {}).get("files", {})
+    model = _read_agent_field(files, "model")
+    max_steps = int(_read_agent_field(files, "maxSteps") or 50)
 
     stop_reason = "unknown"
+    stdout = ""
+    stderr = ""
+    extras: dict = {}
+    context_window: list = []
+
     try:
-        for iteration in tqdm(range(1, max_iter + 1), desc=run_id, unit="iter", leave=False):
-            if cancel_event and cancel_event.is_set():
-                stop_reason = "cancelled"
-                break
-            if compactor.should_compact(history, model):
-                history = compactor.compact(history, model, tracer=tracer)
-            try:
-                content, input_tokens, output_tokens = llm.generate(history, cap_output=True)
-                tracer.log_llm_call(input_tokens, output_tokens)
-            except Exception as e:
-                stop_reason = f"llm_error: {type(e).__name__}"
-                history.append({"role": "user", "content": f"<error>\n{e}\n</error>"})
-                print(f"[red-purple] {run_id} | stopping: {stop_reason}", flush=True)
-                break
-            calls = parse_tool_calls(content)
-            history.append({"role": "assistant", "content": content})
+        _materialize_files(workdir, files)
+        _inject_prompt(workdir)
+        _prepend_target(workdir, target)
 
-            if iteration == max_iter:
-                stop_reason = "max_iterations"
-                break
+        proc = subprocess.Popen(
+            [
+                "opencode", "run",
+                "--agent", "ctf-agent",
+                "--dir", str(workdir),
+                f"The target is at {target}. Find and report the flag.",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
 
-            if not calls:
-                history.append({"role": "user", "content": "You must call a tool to continue. Use terminal_execute to run a command, or finish to report your result."})
-                continue
+        def _watch() -> None:
+            while proc.poll() is None:
+                if cancel_event and cancel_event.is_set():
+                    proc.kill()
+                    return
+                time.sleep(1)
 
-            finished = False
-            for call in calls:
-                result, should_finish, latency_ms = run_tool(call, tools)
-                tracer.log_tool_call(call["name"], call["args"], latency_ms)
-                result = extractor.extract(result, model=model, tracer=tracer)
-                history.append({"role": "user", "content": f"<tool_result>\n{result}\n</tool_result>"})
-                if should_finish:
-                    stop_reason = "agent_finished"
-                    finished = True
-                    break
+        threading.Thread(target=_watch, daemon=True).start()
 
-            if finished:
-                break
+        try:
+            stdout, stderr = proc.communicate(timeout=max_steps * 120)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            stop_reason = "timeout"
+
+        if cancel_event and cancel_event.is_set():
+            stop_reason = "cancelled"
+        elif stop_reason == "unknown":
+            stop_reason = "agent_finished" if proc.returncode == 0 else f"error_rc{proc.returncode}"
+
+        extras, context_window = _trace_session(workdir)
+
     except Exception as e:
-        if stop_reason == "unknown":
-            stop_reason = f"error: {type(e).__name__}"
-        import traceback; traceback.print_exc()
+        stop_reason = f"error: {type(e).__name__}: {e}"
+
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
-        tracer.set_stop_reason(stop_reason)
-        metadata, context_window = tracer.finish(history)
-        flag = metadata.get("flag")
-        outcome = f"FLAG {flag}" if flag else f"no flag ({stop_reason})"
-        print(f"[red-purple] {run_id} done | {outcome}")
+
+    finished_at = datetime.now(timezone.utc).isoformat()
+    duration = (
+        datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)
+    ).total_seconds()
+
+    all_text = extras.get("all_text", "") + "\n" + stdout
+    flag = _find_flag(all_text)
+    success = flag is not None
+
+    if stop_reason == "agent_finished" and not success and extras.get("llm_calls", 0) >= max_steps:
+        stop_reason = "max_steps_reached"
+
+    metadata = {
+        "run_id": run_id,
+        "target": target,
+        "model": model,
+        "success": success,
+        "flag": flag,
+        "stop_reason": stop_reason,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": round(duration, 2),
+        "iterations_used": extras.get("tool_calls", 0),
+        "max_iterations": max_steps,
+        "llm_calls": extras.get("llm_calls", 0),
+        "tool_calls": extras.get("tool_calls", 0),
+        "total_input_tokens": extras.get("total_input_tokens", 0),
+        "total_output_tokens": extras.get("total_output_tokens", 0),
+        "total_tokens": extras.get("total_tokens", 0),
+        "total_cost_usd": extras.get("total_cost_usd", 0.0),
+        "context_messages": extras.get("context_messages", 0),
+        **({"stderr": "\n".join(stderr.strip().splitlines()[-20:])} if stderr.strip() else {}),
+        **({"stdout": "\n".join(stdout.strip().splitlines()[-20:])} if stdout.strip() else {}),
+    }
+
+    outcome = f"FLAG {flag}" if success else f"no flag ({stop_reason})"
+    print(f"[red-purple] {run_id} done | {outcome}", flush=True)
 
     return metadata, context_window

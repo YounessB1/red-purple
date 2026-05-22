@@ -43,11 +43,11 @@ async def cancel_endpoint() -> dict:
 
 
 @app.post("/run")
-async def run_endpoint(target: str, max_iter: int = 100, seed_json: str = "", model: str = "") -> dict:
+async def run_endpoint(target: str, seed_json: str = "") -> dict:
     global _active_runs
     target = _rewrite_localhost(target)
     run_id = f"run-{uuid4().hex[:8]}"
-    prompt = json.loads(seed_json).get("prompt") if seed_json else None
+    candidate = json.loads(seed_json) if seed_json else {}
 
     with _runs_lock:
         _active_runs += 1
@@ -55,7 +55,7 @@ async def run_endpoint(target: str, max_iter: int = 100, seed_json: str = "", mo
     loop = asyncio.get_event_loop()
     try:
         metadata, context_window = await loop.run_in_executor(
-            None, lambda: run(target=target, run_id=run_id, max_iter=max_iter, model=model, prompt=prompt, cancel_event=_cancel_event)
+            None, lambda: run(target=target, run_id=run_id, candidate=candidate, cancel_event=_cancel_event)
         )
     except Exception:
         raise HTTPException(status_code=500, detail=traceback.format_exc())

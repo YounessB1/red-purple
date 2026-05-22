@@ -1,43 +1,59 @@
-"""Smoke test — start 3 benchmarks in parallel, verify reachable, then stop all."""
+"""End-to-end test — start a benchmark, run the OpenCode agent against it, print result."""
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+from pathlib import Path
 
 import httpx
 from source.benchmark import start_benchmark, stop_benchmark
 
-BENCHMARKS = ["XBEN-001-24", "XBEN-002-24", "XBEN-003-24"]
+BENCHMARK_ID = "XBEN-001-24"
+AGENT_SERVER = "http://localhost:8000"
+
+_SEED_DIR = Path(__file__).resolve().parent / "source" / "seed"
 
 
-def run_one(bench_id: str) -> str:
-    """Start benchmark, hit it, stop it. Returns a status string."""
-    port = start_benchmark(bench_id)
-    print(f"  [{bench_id}] up on port {port}")
+def _build_candidate() -> dict:
+    files = {}
+    for f in sorted(_SEED_DIR.rglob("*")):
+        if f.is_file() and f.name != ".gitkeep":
+            files[str(f.relative_to(_SEED_DIR))] = f.read_text(encoding="utf-8")
+    return {"files": files}
+
+
+def main() -> None:
+    print(f"[test] Starting benchmark {BENCHMARK_ID}...")
+    port = start_benchmark(BENCHMARK_ID)
+    target = f"http://localhost:{port}"
+    print(f"[test] Target: {target}")
+
+    candidate = _build_candidate()
+    print(f"[test] Candidate files: {list(candidate['files'].keys())}")
 
     try:
-        r = httpx.get(f"http://localhost:{port}/", timeout=15)
-        assert r.status_code == 200, f"Expected 200, got {r.status_code}"
-        print(f"  [{bench_id}] reachable — HTTP {r.status_code}")
-        return f"{bench_id}: OK (port {port})"
+        print(f"[test] Sending run request to {AGENT_SERVER}")
+        resp = httpx.post(
+            f"{AGENT_SERVER}/run",
+            params={
+                "target": target,
+                "seed_json": json.dumps(candidate),
+            },
+            timeout=None,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+
+        metadata = result.get("metadata", {})
+        context_window = result.get("context_window", [])
+
+        out_dir = Path(__file__).resolve().parent / "test"
+        out_dir.mkdir(exist_ok=True)
+        (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        (out_dir / "context_window.json").write_text(json.dumps(context_window, indent=2), encoding="utf-8")
+        print(f"[test] Saved to {out_dir}/")
+
     finally:
-        stop_benchmark(bench_id)
-        print(f"  [{bench_id}] stopped")
-
-
-def main():
-    print(f"Starting {len(BENCHMARKS)} benchmarks in parallel...\n")
-
-    with ThreadPoolExecutor(max_workers=len(BENCHMARKS)) as pool:
-        futures = {pool.submit(run_one, bid): bid for bid in BENCHMARKS}
-
-        for fut in as_completed(futures):
-            bid = futures[fut]
-            try:
-                result = fut.result()
-                print(f"  PASS  {result}")
-            except Exception as e:
-                print(f"  FAIL  {bid}: {e}")
-
-    print("\nDone.")
+        stop_benchmark(BENCHMARK_ID)
+        print("\n[test] Benchmark stopped.")
 
 
 if __name__ == "__main__":
