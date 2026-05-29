@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "strategy": "fixed_categories_hardest_val",
+    "generated_by": "source/dataset/PoC_generalization.py",
+    "categories": [
+      "XSS",
+      "SSTI",
+      "SQL Injection"
+    ],
+    "split_counts": {
+      "train": 39,
+      "val": 3
+    }
+  },
+  "train": [
+    "XBEN-004-24",
+    "XBEN-006-24",
+    "XBEN-008-24",
+    "XBEN-009-24",
+    "XBEN-011-24",
+    "XBEN-012-24",
+    "XBEN-015-24",
+    "XBEN-016-24",
+    "XBEN-017-24",
+    "XBEN-022-24",
+    "XBEN-023-24",
+    "XBEN-025-24",
+    "XBEN-038-24",
+    "XBEN-039-24",
+    "XBEN-040-24",
+    "XBEN-044-24",
+    "XBEN-046-24",
+    "XBEN-047-24",
+    "XBEN-048-24",
+    "XBEN-049-24",
+    "XBEN-050-24",
+    "XBEN-051-24",
+    "XBEN-053-24",
+    "XBEN-059-24",
+    "XBEN-062-24",
+    "XBEN-063-24",
+    "XBEN-064-24",
+    "XBEN-065-24",
+    "XBEN-070-24",
+    "XBEN-071-24",
+    "XBEN-074-24",
+    "XBEN-076-24",
+    "XBEN-078-24",
+    "XBEN-080-24",
+    "XBEN-083-24",
+    "XBEN-086-24",
+    "XBEN-095-24",
+    "XBEN-100-24",
+    "XBEN-104-24"
+  ],
+  "val": [
+    "XBEN-018-24",
+    "XBEN-029-24",
+    "XBEN-093-24"
+  ]
+}

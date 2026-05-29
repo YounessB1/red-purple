@@ -10,35 +10,12 @@ from pathlib import Path
 from source.optimize_anything import candidate_store
 from source.optimize_anything.logger import Logger
 from source.optimize_anything.evaluator import _get_iteration, get_current_candidate
-from source.optimize_anything.utils import candidate_hash
+from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict
 
 _ROOT = Path(__file__).resolve().parents[2]
 _WORKSPACE = _ROOT / "workspace"
 _WORKSPACE_AGENT = _WORKSPACE / "agent"
 _REFLECTOR_MD = _ROOT / ".opencode" / "agents" / "reflector.md"
-
-
-def _snapshot_dir(d: Path, exclude: frozenset[str] = frozenset()) -> dict:
-    result = {}
-    for f in sorted(d.rglob("*")):
-        if not f.is_file():
-            continue
-        rel = str(f.relative_to(d))
-        if any(rel == e or rel.startswith(e + "/") for e in exclude):
-            continue
-        try:
-            result[rel] = f.read_text(encoding="utf-8")
-        except Exception:
-            pass
-    return result
-
-
-def _materialize_dir(d: Path, files: dict) -> None:
-    d.mkdir(parents=True, exist_ok=True)
-    for rel_path, content in files.items():
-        dest = d / rel_path
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content, encoding="utf-8")
 
 
 def _update_reflector_model(model: str) -> None:
@@ -85,17 +62,9 @@ class AgenticReflector:
         _copy_artifacts(iter_dir)
 
         # Snapshot workspace/agent/ before reflection → iter_dir/agent/
-        _materialize_dir(iter_dir / "parent", _snapshot_dir(_WORKSPACE_AGENT))
+        dict_to_folder(iter_dir / "parent", folder_to_dict(_WORKSPACE_AGENT))
 
-        message = (
-            "Analyze the iteration artifacts and improve the CTF agent strategy.\n\n"
-            "- Artifacts are in workspace/artifacts/ — read metadata.json and diagnosis.json for each benchmark\n"
-            "- Current agent strategy is in workspace/agent/prompt.md — this is what you must improve\n"
-            "- Edit workspace/agent/prompt.md in-place with a better strategy based on the failure diagnoses\n"
-            "- You may create or update skill files in workspace/agent/skills/ for reusable attack patterns\n"
-            "- Keep skills minimal: prefer updating an existing skill over creating a new one; avoid bloat\n"
-            "- Do NOT modify workspace/artifacts/, workspace/agent/.opencode/, or .opencode/agents/reflector.md"
-        )
+        message = "Analyze artifacts and improve the agent strategy."
 
         print(f"\n[agentic-reflector] Starting OpenCode for iteration {iteration}…", flush=True)
 
@@ -116,10 +85,10 @@ class AgenticReflector:
             print(f"[agentic-reflector] No stdout — stderr:\n{proc.stderr}", flush=True)
 
         # Snapshot workspace/agent/ after reflection → iter_dir/child/ + store
-        new_files = _snapshot_dir(_WORKSPACE_AGENT)
+        new_files = folder_to_dict(_WORKSPACE_AGENT)
         new_hash = candidate_hash(new_files)
         candidate_store.store(new_hash, new_files)
-        _materialize_dir(iter_dir / "child", new_files)
+        dict_to_folder(iter_dir / "child", new_files)
 
         changes_path = _WORKSPACE / "reflector_changes.md"
         changes = changes_path.read_text(encoding="utf-8").strip() if changes_path.exists() else ""

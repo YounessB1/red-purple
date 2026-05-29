@@ -4,18 +4,21 @@ import json
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-SPLITS_PATH = _REPO_ROOT / "source" / "dataset" / "splits.json"
+_DATASET_DIR = _REPO_ROOT / "source" / "dataset"
 BENCHMARKS_DIR = _REPO_ROOT / "xbow" / "benchmarks"
 
 
 def load_dataset(
-    splits_path: Path = SPLITS_PATH,
+    splits_name: str = "splits",
+    train_split: str = "train",
+    val_split: str = "val",
     benchmarks_dir: Path = BENCHMARKS_DIR,
 ) -> tuple[list[dict], list[dict]]:
-    """Load splits.json and return (trainset, valset) as lists of example dicts."""
+    """Load <splits_name>.json and return (trainset, valset) as lists of example dicts."""
+    splits_path = _DATASET_DIR / f"{splits_name}.json"
     splits = json.loads(splits_path.read_text(encoding="utf-8"))
-    train = [_make_example(bid, benchmarks_dir, "train") for bid in splits["train"]]
-    val = [_make_example(bid, benchmarks_dir, "val") for bid in splits["val"]]
+    train = [_make_example(bid, benchmarks_dir, train_split) for bid in splits[train_split]]
+    val = [_make_example(bid, benchmarks_dir, val_split) for bid in splits[val_split]]
     return train, val
 
 

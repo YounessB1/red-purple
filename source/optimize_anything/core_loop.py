@@ -1,21 +1,19 @@
 """Core GEPA optimization loop — all logic lives here."""
 
 import json
-import random
 import re
 import shutil
 from pathlib import Path
 
 from gepa import optimize
-from gepa.strategies.eval_policy import FullEvaluationPolicy
 
 from source.optimize_anything import cache, candidate_store, evaluator
-from source.optimize_anything.adapter import RedPurpleAdapter
+from source.optimize_anything.adapter import RedPurpleAdapter, SubsetValPolicy
 from source.optimize_anything.callbacks import TracingCallback
 from source.optimize_anything.dataset import load_dataset
 from source.optimize_anything.logger import Logger
 from source.optimize_anything.agentic_reflector import AgenticReflector
-from source.optimize_anything.utils import candidate_hash
+from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict, next_experiment_dir
 
 _SEED_DIR = Path(__file__).resolve().parents[2] / "source" / "seed"
 _WORKSPACE = Path(__file__).resolve().parents[2] / "workspace"
@@ -29,48 +27,21 @@ def flush_logger() -> None:
         _active_logger.write_summary()
 
 
-class SubsetValPolicy(FullEvaluationPolicy):
-    """Evaluates a random subset of k val examples per accepted candidate."""
-
-    def __init__(self, k: int, seed: int = 0):
-        self.k = k
-        self.rng = random.Random(seed)
-
-    def get_eval_batch(self, loader, state, target_program_idx=None):
-        all_ids = list(loader.all_ids())
-        if self.k >= len(all_ids):
-            return all_ids
-        return self.rng.sample(all_ids, self.k)
-
-
-def _next_experiment_dir(base: Path) -> Path:
-    """Find the next experiment number: experiment1, experiment2, ..."""
-    base.mkdir(parents=True, exist_ok=True)
-    existing = [
-        int(m.group(1))
-        for d in base.iterdir()
-        if d.is_dir() and (m := re.match(r"experiment(\d+)$", d.name))
-    ]
-    n = max(existing, default=0) + 1
-    return base / f"experiment{n}"
+def _setup_seed(model: str, max_steps: int) -> None:
+    """Patch model and maxSteps into the seed ctf-agent.md from config values."""
+    agent_md = _SEED_DIR / ".opencode" / "agents" / "ctf-agent.md"
+    content = agent_md.read_text(encoding="utf-8")
+    content = re.sub(r'(?m)^model:.*$', f'model: "{model}"', content)
+    content = re.sub(r'(?m)^maxSteps:.*$', f'maxSteps: {max_steps}', content)
+    agent_md.write_text(content, encoding="utf-8")
 
 
 def _build_seed_candidate() -> dict:
-    seed_files = {}
-    for f in sorted(_SEED_DIR.rglob("*")):
-        if f.is_file() and f.name != ".gitkeep":
-            seed_files[str(f.relative_to(_SEED_DIR))] = f.read_text(encoding="utf-8")
-    # Populate workspace/agent/ from seed (preserve directory structure, skip .gitkeep)
+    seed_files = folder_to_dict(_SEED_DIR)
     agent_dir = _WORKSPACE / "agent"
     if agent_dir.exists():
         shutil.rmtree(agent_dir)
-    for d in sorted(_SEED_DIR.rglob("*")):
-        if d.is_dir():
-            (agent_dir / d.relative_to(_SEED_DIR)).mkdir(parents=True, exist_ok=True)
-    for rel, content in seed_files.items():
-        dest = agent_dir / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content, encoding="utf-8")
+    dict_to_folder(agent_dir, seed_files)
     files_hash = candidate_hash(seed_files)
     candidate_store.store(files_hash, seed_files)
     return {"files": files_hash}
@@ -92,13 +63,14 @@ def run(
     train_minibatch_size: int | None = None,
     val_minibatch_size: int | None = None,
     experiment_name: str | None = None,
+    splits_name: str = "splits",
 ) -> None:
     """Run the full GEPA optimization loop."""
     # Resolve experiment directory
     if experiment_name:
         experiment_dir = experiments_dir / experiment_name
     else:
-        experiment_dir = _next_experiment_dir(experiments_dir)
+        experiment_dir = next_experiment_dir(experiments_dir)
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
     global _active_logger
@@ -127,11 +99,12 @@ def run(
     candidate_store.configure(experiment_dir / ".candidates")
 
     # Load dataset
-    train, val = load_dataset()
+    train, val = load_dataset(splits_name=splits_name)
 
     # Copy config.json into experiment dir for reproducibility
     shutil.copy2(config_path, experiment_dir / "config.json")
 
+    _setup_seed(agent_model, agent_max_iter)
     adapter = RedPurpleAdapter(workers=workers)
     seed = _build_seed_candidate()
     callbacks = [TracingCallback(experiment_dir=experiment_dir, seed_candidate=seed, trainset=train, valset=val)]
@@ -142,6 +115,7 @@ def run(
     print(f"[red-purple] Output: {experiment_dir}\n")
 
     lm = AgenticReflector(reflection_lm, logger, experiment_dir) if reflection_lm else None
+    val_policy = SubsetValPolicy(k=val_minibatch_size) if val_minibatch_size is not None else "full_eval"
 
     logger.start_logger()
 
@@ -157,9 +131,7 @@ def run(
             max_metric_calls=max_calls,
             run_dir=str(experiment_dir / "oa_state"),
             callbacks=callbacks,
-            val_evaluation_policy=(
-                SubsetValPolicy(k=val_minibatch_size) if val_minibatch_size is not None else "full_eval"
-            ),
+            val_evaluation_policy=val_policy,
             skip_perfect_score=True,
             use_cloudpickle=True,
             cache_evaluation=True,

@@ -10,9 +10,9 @@ import urllib.request
 from source.agent.runner import run as run_agent
 from source.benchmark import start_benchmark, stop_benchmark
 from source.optimize_anything import cache
-from source.optimize_anything.LLM_as_judge import llm_judge
+from source.optimize_anything.scorer import llm_judge
 from source.optimize_anything.diagnoser import diagnose
-from source.optimize_anything.utils import candidate_hash
+from source.optimize_anything.utils import candidate_hash, folder_to_dict
 
 # Set by core_loop before optimization starts
 EXPERIMENT_DIR: Path | None = None
@@ -202,15 +202,7 @@ def _resolve_candidate(candidate: dict) -> dict:
         _WORKSPACE_AGENT.exists()
         and any(f for f in _WORKSPACE_AGENT.rglob("*") if f.is_file() and f.name != ".gitkeep")
     ) else _SEED_DIR
-    files = {}
-    for f in sorted(src.rglob("*")):
-        if not f.is_file() or f.name == ".gitkeep":
-            continue
-        try:
-            files[str(f.relative_to(src))] = f.read_text(encoding="utf-8")
-        except Exception:
-            pass
-    return {**candidate, "files": files}
+    return {**candidate, "files": folder_to_dict(src)}
 
 
 def _run_via_server(target: str, candidate: dict, max_iter: int, model: str) -> dict:

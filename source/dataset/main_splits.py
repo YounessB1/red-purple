@@ -14,8 +14,8 @@ Remaining benchmarks are split into train / test:
   - n ≥ 4             → 1 val (already taken above) + ~20% test + rest train
 
 Usage:
-    uv run python source/dataset/create_splits.py
-    uv run python source/dataset/create_splits.py --seed 42 --val-size 10
+    uv run python source/dataset/main_splits.py
+    uv run python source/dataset/main_splits.py --seed 42 --val-size 10
 """
 
 import argparse
@@ -32,7 +32,10 @@ VAL_SIZE = 10
 
 _REPO_ROOT            = Path(__file__).resolve().parents[2]
 _DEFAULT_BENCHMARKS_DIR = _REPO_ROOT / "xbow" / "benchmarks"
-_DEFAULT_OUTPUT       = Path(__file__).parent / "splits.json"
+_DEFAULT_OUTPUT       = Path(__file__).parent / "main_splits.json"
+_FORBIDDEN_PATH       = Path(__file__).parent / "forbidden_challenges.json"
+
+EXCLUDED_BENCHMARKS: set[str] = set(json.loads(_FORBIDDEN_PATH.read_text(encoding="utf-8")).keys())
 
 
 # ── Tag → category mapping ─────────────────────────────────────────────────────
@@ -88,6 +91,8 @@ def _classify(tags: list[str]) -> str:
 def _collect(benchmarks_dir: Path) -> list[dict]:
     records = []
     for bench_dir in sorted(benchmarks_dir.iterdir()):
+        if bench_dir.name in EXCLUDED_BENCHMARKS:
+            continue
         bj = bench_dir / "benchmark.json"
         if not bj.exists():
             continue
@@ -183,7 +188,7 @@ def create_splits(benchmarks_dir: Path, seed: int, val_size: int = VAL_SIZE) -> 
             "seed":     seed,
             "total":    len(records),
             "strategy": "hardest_per_category_val_then_stratified_train_test",
-            "generated_by": "source/dataset/create_splits.py",
+            "generated_by": "source/dataset/main_splits.py",
             "split_counts": {
                 "train": len(train),
                 "val":   len(val),

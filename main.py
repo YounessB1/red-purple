@@ -61,6 +61,7 @@ def main():
         config_path=CONFIG_PATH,
         reflection_lm=cfg.get("reflection_lm"),
         experiment_name=cfg.get("experiment_name"),
+        splits_name=cfg.get("splits", "splits"),
     )
 
 

@@ -33,14 +33,6 @@ def _inject_prompt(workdir: Path) -> None:
         agent_md_path.write_text(f"---{parts[1]}---\n\n{prompt_content}", encoding="utf-8")
 
 
-def _prepend_target(workdir: Path, target: str) -> None:
-    agents_md = workdir / "AGENTS.md"
-    existing = agents_md.read_text(encoding="utf-8").strip() if agents_md.exists() else ""
-    content = f"# Target\nThe target URL is: {target}"
-    if existing:
-        content += f"\n\n{existing}"
-    agents_md.write_text(content + "\n", encoding="utf-8")
-
 
 def _trace_session(workdir: Path) -> tuple[dict, list]:
     """Read token usage and conversation parts from OpenCode's SQLite DB."""
@@ -187,14 +179,13 @@ def run(
 
     stop_reason = "unknown"
     stdout = ""
-    stderr = ""
     extras: dict = {}
     context_window: list = []
+    tool_counts: dict[str, int] = {}
 
     try:
         _materialize_files(workdir, files)
         _inject_prompt(workdir)
-        _prepend_target(workdir, target)
 
         proc = subprocess.Popen(
             [
@@ -208,28 +199,40 @@ def run(
             text=True,
         )
 
+        watcher_stop = threading.Event()
+        killed_by_cancel = threading.Event()
+
         def _watch() -> None:
-            while proc.poll() is None:
+            while not watcher_stop.is_set() and proc.poll() is None:
                 if cancel_event and cancel_event.is_set():
                     proc.kill()
+                    killed_by_cancel.set()
                     return
                 time.sleep(1)
 
-        threading.Thread(target=_watch, daemon=True).start()
+        watcher = threading.Thread(target=_watch, daemon=True)
+        watcher.start()
 
         try:
-            stdout, stderr = proc.communicate(timeout=max_steps * 120)
+            stdout, _ = proc.communicate(timeout=max_steps * 120)
         except subprocess.TimeoutExpired:
             proc.kill()
-            stdout, stderr = proc.communicate()
+            stdout, _ = proc.communicate()
             stop_reason = "timeout"
 
-        if cancel_event and cancel_event.is_set():
+        watcher_stop.set()
+        watcher.join(timeout=2)
+
+        if killed_by_cancel.is_set():
             stop_reason = "cancelled"
         elif stop_reason == "unknown":
             stop_reason = "agent_finished" if proc.returncode == 0 else f"error_rc{proc.returncode}"
 
         extras, context_window = _trace_session(workdir)
+        tool_counts: dict[str, int] = {}
+        for s in context_window:
+            if s.get("tool"):
+                tool_counts[s["tool"]] = tool_counts.get(s["tool"], 0) + 1
 
     except Exception as e:
         stop_reason = f"error: {type(e).__name__}: {e}"
@@ -246,7 +249,7 @@ def run(
     flag = _find_flag(all_text)
     success = flag is not None
 
-    if stop_reason == "agent_finished" and not success and extras.get("llm_calls", 0) >= max_steps:
+    if stop_reason in ("agent_finished", "cancelled") and not success and extras.get("llm_calls", 0) >= max_steps:
         stop_reason = "max_steps_reached"
 
     metadata = {
@@ -256,8 +259,6 @@ def run(
         "success": success,
         "flag": flag,
         "stop_reason": stop_reason,
-        "started_at": started_at,
-        "finished_at": finished_at,
         "duration_seconds": round(duration, 2),
         "iterations_used": extras.get("tool_calls", 0),
         "max_iterations": max_steps,
@@ -268,8 +269,7 @@ def run(
         "total_tokens": extras.get("total_tokens", 0),
         "total_cost_usd": extras.get("total_cost_usd", 0.0),
         "context_messages": extras.get("context_messages", 0),
-        **({"stderr": "\n".join(stderr.strip().splitlines()[-20:])} if stderr.strip() else {}),
-        **({"stdout": "\n".join(stdout.strip().splitlines()[-20:])} if stdout.strip() else {}),
+        "tool_counts": tool_counts,
     }
 
     outcome = f"FLAG {flag}" if success else f"no flag ({stop_reason})"

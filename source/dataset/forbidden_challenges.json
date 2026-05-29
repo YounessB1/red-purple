@@ -1,0 +1,7 @@
+{
+  "XBEN-010-24": "requires browser",
+  "XBEN-013-24": "requires browser",
+  "XBEN-056-24": "requires browser",
+  "XBEN-087-24": "requires browser",
+  "XBEN-092-24": "requires php-cli"
+}

@@ -8,6 +8,51 @@ import sys
 from pathlib import Path
 
 
+_TAG_TO_CATEGORY: dict[str, str] = {
+    "xss": "XSS", "ssti": "SSTI", "idor": "IDOR",
+    "privilege_escalation": "Privilege Escalation", "command_injection": "Command Injection",
+    "ssh": "Command Injection", "default_credentials": "Default Credentials",
+    "sqli": "SQL Injection", "blind_sqli": "SQL Injection", "nosqli": "SQL Injection",
+    "insecure_deserialization": "Deserialization", "lfi": "LFI",
+    "path_traversal": "LFI", "xxe": "LFI", "business_logic": "Business Logic",
+    "graphql": "Business Logic", "race_condition": "Business Logic",
+    "brute_force": "Business Logic", "http_method_tamper": "Business Logic",
+    "smuggling_desync": "Business Logic", "crypto": "Business Logic",
+    "jwt": "Business Logic", "ssrf": "Business Logic",
+    "information_disclosure": "Business Logic", "arbitrary_file_upload": "Business Logic",
+    "cve": "Business Logic",
+}
+_CATEGORY_PRIORITY = [
+    "XSS", "SSTI", "SQL Injection", "Command Injection",
+    "Deserialization", "LFI", "IDOR", "Privilege Escalation",
+    "Default Credentials", "Business Logic",
+]
+
+
+def _classify_tags(tags: list) -> str:
+    cats = {_TAG_TO_CATEGORY[t] for t in tags if t in _TAG_TO_CATEGORY}
+    if not cats:
+        return "Business Logic"
+    return min(cats, key=_CATEGORY_PRIORITY.index)
+
+
+def _load_bench_categories() -> dict:
+    benchmarks_dir = Path(__file__).resolve().parent / "xbow" / "benchmarks"
+    result: dict[str, str] = {}
+    if not benchmarks_dir.exists():
+        return result
+    for bench_dir in sorted(benchmarks_dir.iterdir()):
+        bj = bench_dir / "benchmark.json"
+        if not bj.exists():
+            continue
+        try:
+            data = json.loads(bj.read_text(encoding="utf-8"))
+            result[bench_dir.name] = _classify_tags(data.get("tags", []))
+        except Exception:
+            pass
+    return result
+
+
 def load_experiment(exp_dir: Path) -> dict:
     iterations = []
     for iter_dir in sorted(exp_dir.glob("iteration_*")):
@@ -20,8 +65,8 @@ def load_experiment(exp_dir: Path) -> dict:
         else:
             status = "pending"
 
-        parent_prompt = ""
-        child_prompt  = ""
+        parent_files  = {}
+        child_files   = {}
         parent_train  = {}
         parent_val    = {}
         child_train   = {}
@@ -30,13 +75,22 @@ def load_experiment(exp_dir: Path) -> dict:
         evo_path = iter_dir / "evolution.json"
         if evo_path.exists():
             evo = json.loads(evo_path.read_text(encoding="utf-8"))
-            parent_prompt = evo.get("parent", {}).get("prompt", "")
-            child_prompt  = evo.get("child",  {}).get("prompt", "")
             parent_train  = evo.get("parent", {}).get("train") or {}
             parent_val    = evo.get("parent", {}).get("val")   or {}
             child_train   = evo.get("child",  {}).get("train") or {}
             child_val     = evo.get("child",  {}).get("val")
             parent_idx    = evo.get("parent", {}).get("candidate_idx")
+
+        for snap_name, target in [("parent", parent_files), ("child", child_files)]:
+            snap_dir = iter_dir / snap_name
+            if snap_dir.exists():
+                for f in sorted(snap_dir.rglob("*")):
+                    if f.is_file():
+                        rel = str(f.relative_to(snap_dir))
+                        try:
+                            target[rel] = f.read_text(encoding="utf-8")
+                        except Exception:
+                            pass
 
         val_ok    = 0
         val_total = 0
@@ -50,11 +104,14 @@ def load_experiment(exp_dir: Path) -> dict:
                 val_ok    = sum(1 for v in val_dict.values() if v == 1.0)
                 val_total = len(val_dict)
 
-        changes = ""
+        changes = []
+        changes_summary = []
         rc_path = iter_dir / "reflector_changes.json"
         if rc_path.exists():
             rc = json.loads(rc_path.read_text(encoding="utf-8"))
-            changes = rc.get("changes", "")
+            raw = rc.get("changes", [])
+            changes = raw if isinstance(raw, list) else [l.strip()[2:].strip() for l in raw.splitlines() if l.strip().startswith("- ")]
+            changes_summary = rc.get("changes_summary", [])
 
         pool_json = ""
         if pool_path.exists():
@@ -78,9 +135,10 @@ def load_experiment(exp_dir: Path) -> dict:
         iterations.append({
             "id":               num,
             "status":           status,
-            "parent_prompt":    parent_prompt,
-            "child_prompt":     child_prompt,
+            "parent_files":     parent_files,
+            "child_files":      child_files,
             "changes":          changes,
+            "changes_summary":  changes_summary,
             "val_ok":           val_ok,
             "val_total":        val_total,
             "parent_train":     parent_train,
@@ -103,7 +161,8 @@ def load_experiment(exp_dir: Path) -> dict:
     if summary_path.exists():
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
 
-    return {"name": exp_dir.name, "iterations": iterations, "config": config, "summary": summary}
+    return {"name": exp_dir.name, "iterations": iterations, "config": config, "summary": summary,
+            "bench_categories": _load_bench_categories()}
 
 
 HTML = r"""<!DOCTYPE html>
@@ -237,6 +296,12 @@ body {
 }
 .scores-tbl tr:last-child td { border-bottom: none; }
 .scores-tbl td.bench-name { color: #8b949e; }
+.bench-cat {
+  font-size: 10px; color: #6e7681; font-family: inherit;
+  background: #1c2128; border: 1px solid #30363d;
+  border-radius: 3px; padding: 1px 5px; margin-left: 7px;
+  font-weight: 500; letter-spacing: 0.2px; vertical-align: middle;
+}
 .s-pass  { color: #3fb950; text-align: center; font-weight: 700; }
 .s-mid   { color: #d29922; text-align: center; }
 .s-fail  { color: #f85149; text-align: center; }
@@ -341,6 +406,29 @@ body {
   background: #161b22; border: 1px solid #30363d; border-radius: 8px;
   padding: 14px 16px; font-size: 13px; color: #484f58; font-style: italic;
 }
+
+/* ── Files overview ── */
+.files-overview {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 10px 14px; margin-bottom: 16px;
+}
+.file-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 3px 0; border-bottom: 1px solid #1c2128;
+  font-size: 12px; font-family: 'JetBrains Mono', Consolas, monospace;
+}
+.file-row:last-child { border-bottom: none; }
+.file-badge {
+  font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+  letter-spacing: 0.4px; text-transform: uppercase; white-space: nowrap;
+  min-width: 68px; text-align: center;
+}
+.fb-modified  { background: #2d2516; color: #d29922; border: 1px solid #9e6a03; }
+.fb-added     { background: #122416; color: #3fb950; border: 1px solid #238636; }
+.fb-removed   { background: #2d1515; color: #f85149; border: 1px solid #6e1a1a; }
+.fb-unchanged { background: #1c2128; color: #484f58; border: 1px solid #30363d; }
+.file-name { color: #8b949e; }
+.file-summary { font-size: 11.5px; color: #6e7681; margin-left: auto; font-style: italic; }
 
 /* ── Reasoning steps ── */
 .rsn-feed { display: flex; flex-direction: column; gap: 6px; }
@@ -504,7 +592,9 @@ function renderScores(it) {
       } else {
         delta = `<td class="s-none"></td>`;
       }
-      rows += `<tr><td class="bench-name">${esc(k)}</td>${scoreCell(p)}${scoreCell(c)}${delta}</tr>`;
+      const cat = (DATA.bench_categories || {})[k];
+      const catTag = cat ? `<span class="bench-cat">${esc(cat)}</span>` : '';
+      rows += `<tr><td class="bench-name">${esc(k)}${catTag}</td>${scoreCell(p)}${scoreCell(c)}${delta}</tr>`;
     }
     return `
       <div class="scores-panel">
@@ -542,28 +632,49 @@ function renderIteration(el, it) {
     }
     body += renderScores(it);
 
-    if (it.changes) {
-      body += `<div class="section-title">Reflector changes</div>`;
-      const bullets = it.changes.split(/\n(?=- )/).map(s => s.replace(/^- /, '').trim()).filter(Boolean);
-      if (bullets.length > 1) {
-        body += `<div class="changes-box"><ul>${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`;
-      } else {
-        body += `<div class="changes-box">${esc(it.changes)}</div>`;
-      }
-    }
+    const pf = it.parent_files || {};
+    const cf = it.child_files  || {};
+    const allFiles = [...new Set([...Object.keys(pf), ...Object.keys(cf)])].sort();
 
-    body += `<div class="section-title">Prompt diff — parent → child</div>`;
-    if (!it.parent_prompt && !it.child_prompt) {
-      body += `<div class="no-diff">No prompt data for this iteration.</div>`;
-    } else if (it.parent_prompt && !it.child_prompt) {
-      body += `<div class="no-diff">Skipped — parent scored perfectly.</div>`;
-    } else if (it.parent_prompt === it.child_prompt) {
-      body += `<div class="no-diff">Prompts are identical — no changes.</div>`;
+    if (!allFiles.length) {
+      body += `<div class="no-diff">No file data for this iteration.</div>`;
     } else {
-      const diff = lineDiff(it.parent_prompt, it.child_prompt);
-      const dels = diff.filter(d => d.t === 'd').length;
-      const ins  = diff.filter(d => d.t === 'i').length;
-      body += `<div class="diff-meta"><span class="stat-del">−${dels} lines</span><span class="stat-ins">+${ins} lines</span></div>${renderUnifiedDiff(diff)}`;
+      const added     = allFiles.filter(f => !(f in pf) &&  (f in cf));
+      const removed   = allFiles.filter(f =>  (f in pf) && !(f in cf));
+      const modified  = allFiles.filter(f =>  (f in pf) &&  (f in cf) && pf[f] !== cf[f]);
+      const unchanged = allFiles.filter(f =>  (f in pf) &&  (f in cf) && pf[f] === cf[f]);
+
+      const summaryMap = {};
+      (it.changes_summary || []).forEach(l => {
+        const ci = l.indexOf(':');
+        if (ci > 0) summaryMap[l.slice(0, ci).trim()] = l.slice(ci + 1).trim();
+      });
+      body += `<div class="section-title">Files</div>`;
+      body += renderFilesOverview(added, removed, modified, unchanged, summaryMap);
+
+      const bullets = Array.isArray(it.changes) ? it.changes : (it.changes || '').split(/\n(?=- )/).map(s => s.replace(/^- /, '').trim()).filter(Boolean);
+      if (bullets.length) {
+        body += `<div class="section-title">Reflector changes</div>`;
+        body += `<div class="changes-box"><ul>${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`;
+      }
+
+      for (const f of [...modified, ...added].sort()) {
+        const diff = lineDiff(pf[f] || '', cf[f] || '');
+        const dels = diff.filter(d => d.t === 'd').length;
+        const ins  = diff.filter(d => d.t === 'i').length;
+        const isNew = !(f in pf);
+        body += `<div class="section-title" style="margin-top:18px">${esc(f)}</div>`;
+        body += `<div class="diff-meta">`;
+        if (!isNew) body += `<span class="stat-del">−${dels} lines</span>`;
+        body += `<span class="stat-ins">+${ins} lines</span>`;
+        if (isNew) body += `<span style="color:#6e7681;font-size:11px;margin-left:4px">new file</span>`;
+        body += `</div>`;
+        body += renderUnifiedDiff(diff);
+      }
+      for (const f of removed) {
+        body += `<div class="section-title" style="margin-top:18px">${esc(f)}</div>`;
+        body += `<div class="no-diff" style="border-left:3px solid #f85149;color:#f85149">deleted</div>`;
+      }
     }
 
   } else if (selTab === 'pool') {
@@ -739,6 +850,26 @@ function renderReasoning(it) {
   }
   html += '</div>';
   return html;
+}
+
+// ── Files overview ────────────────────────────────────────────────────────
+function renderFilesOverview(added, removed, modified, unchanged, summaryMap) {
+  summaryMap = summaryMap || {};
+  function lookup(f) {
+    if (summaryMap[f]) return summaryMap[f];
+    return summaryMap[f.split('/').pop()] || '';
+  }
+  function fileRows(cls, label, files) {
+    return files.map(f => {
+      const desc = lookup(f);
+      return `<div class="file-row"><span class="file-badge fb-${cls}">${label}</span><span class="file-name">${esc(f)}</span>${desc ? `<span class="file-summary">${esc(desc)}</span>` : ''}</div>`;
+    }).join('');
+  }
+  const rows = fileRows('modified', 'modified', modified)
+             + fileRows('added',    'added',    added)
+             + fileRows('removed',  'deleted',  removed)
+             + fileRows('unchanged','unchanged',unchanged);
+  return `<div class="files-overview">${rows}</div>`;
 }
 
 // ── Render unified diff (git-style) ───────────────────────────────────────

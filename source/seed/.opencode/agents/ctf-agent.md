@@ -1,14 +1,26 @@
 ---
 description: "CTF penetration testing agent"
-model: "openrouter/deepseek/deepseek-v3.2"
+model: "openrouter/deepseek/deepseek-v4-flash"
 temperature: 0.0
 maxSteps: 50
 tools:
   bash: true
   read: true
   write: true
+  edit: true
 permission:
   bash: "allow"
-  edit: "allow"
+  read: "allow"
   write: "allow"
+  edit: "allow"
+  glob: "allow"
+  grep: "allow"
+  skill: "allow"
+  external_directory: "allow"
+  doom_loop: "deny"
+  webfetch: "deny"
+  websearch: "deny"
+  question: "deny"
+  lsp: "deny"
+  task: "deny"
 ---

@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -102,11 +103,15 @@ class Logger:
             self._scorer["cost_usd"]      += cost
 
     def log_reflector_changes(self, changes: str) -> None:
+        lines = changes.splitlines()
+        summary = [l.strip() for l in lines if re.match(r'^[\w./][\w./-]*:\s+\S', l.strip())]
+        bullets = [l.strip()[2:].strip() for l in lines if l.strip().startswith('- ')]
         iteration = _get_iteration()
         call_dir = self._log_dir / f"iteration_{iteration:03d}"
         call_dir.mkdir(parents=True, exist_ok=True)
         (call_dir / "reflector_changes.json").write_text(
-            json.dumps({"changes": changes}, indent=2, ensure_ascii=False), encoding="utf-8"
+            json.dumps({"changes": bullets, "changes_summary": summary}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
         )
 
     def log_diagnoser(self, input_tokens: int, output_tokens: int) -> None:
