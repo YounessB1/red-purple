@@ -1,29 +1,18 @@
 """Agentic prompt reflector — spawns an OpenCode agent that edits agent files in workspace/."""
 
-import json
-import re
 import shutil
-import sqlite3
 import subprocess
 from pathlib import Path
 
 from source.optimize_anything import candidate_store
 from source.optimize_anything.logger import Logger
-from source.optimize_anything.evaluator import _get_iteration, get_current_candidate
-from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict
+from source.optimize_anything.evaluator import _get_iteration, get_current_candidate, set_reflection_was_merge, set_reflection_merge_parent_b_hash
+from source.optimize_anything.opencode_trace import trace_opencode_session
+from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict, get_candidates_pool, log
 
 _ROOT = Path(__file__).resolve().parents[2]
 _WORKSPACE = _ROOT / "workspace"
 _WORKSPACE_AGENT = _WORKSPACE / "agent"
-_REFLECTOR_MD = _ROOT / ".opencode" / "agents" / "reflector.md"
-
-
-def _update_reflector_model(model: str) -> None:
-    """Patch the model field in root's reflector.md in-place."""
-    content = _REFLECTOR_MD.read_text(encoding="utf-8")
-    new_content = re.sub(r'(?m)^model:.*$', f'model: "{model}"', content)
-    if new_content != content:
-        _REFLECTOR_MD.write_text(new_content, encoding="utf-8")
 
 
 def _copy_artifacts(iter_dir: Path) -> None:
@@ -36,55 +25,131 @@ def _copy_artifacts(iter_dir: Path) -> None:
         artifacts_dst.mkdir(parents=True)
 
 
+def _compute_overlap(val_a: dict, val_b: dict) -> float:
+    """Jaccard similarity on win-sets (benchmarks where score > 0)."""
+    wins_a = {b for b, s in val_a.items() if s > 0}
+    wins_b = {b for b, s in val_b.items() if s > 0}
+    if not wins_a and not wins_b:
+        return 1.0
+    return len(wins_a & wins_b) / len(wins_a | wins_b)
+
+
 # ── Agentic reflector ──────────────────────────────────────────────────
 
 class AgenticReflector:
     """Spawns an OpenCode agent that reads artifacts and edits agent files in workspace/ in-place."""
 
-    def __init__(self, model: str, logger: Logger, experiment_dir: Path) -> None:
+    def __init__(
+        self,
+        model: str,
+        logger: Logger,
+        experiment_dir: Path,
+        merge_threshold: float = 0.3,
+        reflector_agent: str = "reflector",
+        merger_agent: str = "merger",
+    ) -> None:
         self._model = model
         self._logger = logger
         self._experiment_dir = experiment_dir
+        self._merge_threshold = merge_threshold
+        self._reflector_agent = reflector_agent
+        self._merger_agent = merger_agent
+
+    def _find_merge_candidates(self, pool: list[dict], current_hash: str) -> tuple[str, str] | None:
+        current_entry = next((c for c in pool if c.get("files") == current_hash), None)
+        if current_entry is None:
+            return None
+        val_a = current_entry.get("val", {})
+
+        best_hash, best_overlap = None, 1.0
+        for c in pool:
+            if c.get("files") == current_hash:
+                continue
+            if not c.get("on_pareto_front"):
+                continue
+            overlap = _compute_overlap(val_a, c.get("val", {}))
+            if overlap < best_overlap:
+                best_overlap = overlap
+                best_hash = c["files"]
+
+        if best_hash and best_overlap < self._merge_threshold:
+            return current_hash, best_hash
+        return None
+
+    def _run_tweak(self, iter_dir: Path) -> None:
+        _copy_artifacts(iter_dir)
+
+        message = "Analyze artifacts and improve the agent strategy."
+        log(f"\n[agentic-reflector] Starting OpenCode for iteration {_get_iteration()}…")
+
+        proc = subprocess.run(
+            ["opencode", "run", "--agent", self._reflector_agent, "--model", self._model, "--dir", str(_ROOT), message],
+            capture_output=True, text=True, timeout=600,
+        )
+
+        raw = proc.stdout.strip()
+        if not raw:
+            log(f"[agentic-reflector] No stdout — stderr:\n{proc.stderr}")
+
+        input_tokens, output_tokens, cost, steps = trace_opencode_session(_ROOT)
+        self._logger.log_reflector(input_tokens, output_tokens, message, raw, cost=cost, steps=steps)
+
+    def _run_merge(self, hash_a: str, hash_b: str, iter_dir: Path) -> None:
+        # workspace/agent/ already restored to hash_a (current parent) by __call__
+        candidate_store.restore_workspace(hash_b, _WORKSPACE / "agent_to_merge")
+
+        message = (
+            "Analyze the two candidate agents and the failure artifacts, "
+            "then write a synthesized agent to workspace/agent/ that combines "
+            "the best ideas from both."
+        )
+        log(f"\n[agentic-reflector] MERGE — {hash_a[:10]}… + {hash_b[:10]}…")
+
+        proc = subprocess.run(
+            ["opencode", "run", "--agent", self._merger_agent, "--model", self._model, "--dir", str(_ROOT), message],
+            capture_output=True, text=True, timeout=600,
+        )
+
+        raw = proc.stdout.strip()
+        if not raw:
+            log(f"[agentic-reflector] merger no stdout — stderr:\n{proc.stderr}")
+
+        input_tokens, output_tokens, cost, steps = trace_opencode_session(_ROOT)
+        self._logger.log_reflector(input_tokens, output_tokens, message, raw, cost=cost, steps=steps)
+
+        shutil.rmtree(_WORKSPACE / "agent_to_merge", ignore_errors=True)
+        set_reflection_was_merge(True)
 
     def __call__(self, _prompt: str | list[dict]) -> str:
         iteration = _get_iteration()
         iter_dir = self._experiment_dir / f"iteration_{iteration:03d}"
 
-        # Patch model in root reflector.md; reflector runs from root so no workspace copy needed
-        _update_reflector_model(self._model)
+        # Clear entire workspace before repopulating for this iteration
+        if _WORKSPACE.exists():
+            shutil.rmtree(_WORKSPACE)
+        _WORKSPACE.mkdir(parents=True)
 
-        # Restore workspace/agent/ to the exact files for the candidate GEPA selected
+        # Restore workspace/agent/ to current parent and snapshot for visibility
         current_hash = get_current_candidate().get("files", "")
-        if not candidate_store.restore_workspace(current_hash, _WORKSPACE_AGENT):
-            print(f"[agentic-reflector] Warning: hash {current_hash[:12]}… not in store, using current workspace", flush=True)
+        if candidate_store.restore_workspace(current_hash, _WORKSPACE_AGENT):
+            dict_to_folder(iter_dir / "parent", folder_to_dict(_WORKSPACE_AGENT))
+        else:
+            log(f"[agentic-reflector] Warning: hash {current_hash[:12]}… not in store, using current workspace")
 
-        # Copy training artifacts into workspace/artifacts/ for the reflector to read
-        _copy_artifacts(iter_dir)
+        # Route: merge if a Pareto-front complement exists, else tweak
+        pool = get_candidates_pool(self._experiment_dir, iteration)
+        pair = self._find_merge_candidates(pool, current_hash)
 
-        # Snapshot workspace/agent/ before reflection → iter_dir/agent/
-        dict_to_folder(iter_dir / "parent", folder_to_dict(_WORKSPACE_AGENT))
+        if pair:
+            hash_a, hash_b = pair
+            set_reflection_merge_parent_b_hash(hash_b)
+            log(f"[agentic-reflector] iteration {iteration} → merge")
+            self._run_merge(hash_a, hash_b, iter_dir)
+        else:
+            log(f"[agentic-reflector] iteration {iteration} → tweak")
+            self._run_tweak(iter_dir)
 
-        message = "Analyze artifacts and improve the agent strategy."
-
-        print(f"\n[agentic-reflector] Starting OpenCode for iteration {iteration}…", flush=True)
-
-        proc = subprocess.run(
-            [
-                "opencode", "run",
-                "--agent", "reflector",
-                "--dir", str(_ROOT),
-                message,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-
-        raw = proc.stdout.strip()
-        if not raw:
-            print(f"[agentic-reflector] No stdout — stderr:\n{proc.stderr}", flush=True)
-
-        # Snapshot workspace/agent/ after reflection → iter_dir/child/ + store
+        # Common exit: snapshot, hash, store, persist, return
         new_files = folder_to_dict(_WORKSPACE_AGENT)
         new_hash = candidate_hash(new_files)
         candidate_store.store(new_hash, new_files)
@@ -95,50 +160,4 @@ class AgenticReflector:
         if changes:
             self._logger.log_reflector_changes(changes)
 
-        input_tokens, output_tokens, cost, steps = self._trace_session()
-        self._logger.log_reflector(input_tokens, output_tokens, message, raw, cost=cost, steps=steps)
-
         return f"```\n{new_hash}\n```"
-
-    def _trace_session(self) -> tuple[int, int, float, list]:
-        """Query OpenCode's SQLite DB for the most recent reflector session."""
-        db_path = Path.home() / ".local/share/opencode/opencode.db"
-        try:
-            db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        except Exception:
-            return 0, 0, 0.0, []
-        try:
-            row = db.execute(
-                "SELECT id, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read "
-                "FROM session WHERE directory=? ORDER BY time_created DESC LIMIT 1",
-                (str(_ROOT),),
-            ).fetchone()
-            if not row:
-                return 0, 0, 0.0, []
-            session_id, cost, input_tokens, output_tokens, *_ = row
-            parts = db.execute(
-                "SELECT data FROM part WHERE session_id=? ORDER BY time_created",
-                (session_id,),
-            ).fetchall()
-            steps: list[dict] = []
-            for (raw_part,) in parts:
-                try:
-                    part = json.loads(raw_part)
-                except Exception:
-                    continue
-                ptype = part.get("type")
-                if ptype == "reasoning" and part.get("text", "").strip():
-                    steps.append({"type": "thinking", "text": part["text"].strip()})
-                elif ptype == "text" and part.get("text", "").strip():
-                    steps.append({"type": "text", "text": part["text"].strip()})
-                elif ptype == "tool":
-                    name = part.get("tool", "?")
-                    state = part.get("state", {})
-                    inp = state.get("input", {}) if isinstance(state, dict) else {}
-                    step: dict = {"type": "tool", "name": name, "input": inp}
-                    if name == "read":
-                        step["file"] = inp.get("filePath", inp.get("path", "?"))
-                    steps.append(step)
-            return input_tokens, output_tokens, cost, steps
-        finally:
-            db.close()

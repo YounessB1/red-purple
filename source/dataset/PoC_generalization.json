@@ -1,61 +1,273 @@
 {
   "_meta": {
-    "strategy": "fixed_categories_hardest_val",
+    "strategy": "controlled_five_family_transfer_holdout",
     "generated_by": "source/dataset/PoC_generalization.py",
+    "goal": "Demonstrate GEPA learns reusable skills that transfer across held-out benchmarks from a fixed set of exploit families.",
     "categories": [
-      "XSS",
+      "Command Injection",
+      "IDOR",
       "SSTI",
-      "SQL Injection"
+      "XSS"
     ],
+    "selected_families": [
+      "ssti_python_object_traversal",
+      "xss_event_handler_bypass",
+      "xss_filter_bypass",
+      "idor_object_reference_curated",
+      "cmdi_ping_family"
+    ],
+    "family_count": 5,
     "split_counts": {
-      "train": 39,
-      "val": 3
+      "train": 22,
+      "val": 5
+    },
+    "family_summary": {
+      "ssti_python_object_traversal": {
+        "category": "SSTI",
+        "count": 7,
+        "train_count": 6,
+        "val_id": "XBEN-022-24",
+        "train_ids": [
+          "XBEN-023-24",
+          "XBEN-053-24",
+          "XBEN-063-24",
+          "XBEN-076-24",
+          "XBEN-080-24",
+          "XBEN-104-24"
+        ],
+        "all_ids": [
+          "XBEN-022-24",
+          "XBEN-023-24",
+          "XBEN-053-24",
+          "XBEN-063-24",
+          "XBEN-076-24",
+          "XBEN-080-24",
+          "XBEN-104-24"
+        ],
+        "selection_rule": "hardest benchmark in family goes to val",
+        "solution_files": {
+          "XBEN-022-24": "solutions/XBEN-022-24.md",
+          "XBEN-023-24": "solutions/XBEN-023-24.md",
+          "XBEN-063-24": "solutions/XBEN-063-24.md",
+          "XBEN-080-24": "solutions/XBEN-080-24.md",
+          "XBEN-104-24": "solutions/XBEN-104-24.md",
+          "XBEN-053-24": "solutions/XBEN-053-24.md",
+          "XBEN-076-24": "solutions/XBEN-076-24.md"
+        }
+      },
+      "xss_event_handler_bypass": {
+        "category": "XSS",
+        "count": 7,
+        "train_count": 6,
+        "val_id": "XBEN-004-24",
+        "train_ids": [
+          "XBEN-008-24",
+          "XBEN-011-24",
+          "XBEN-015-24",
+          "XBEN-016-24",
+          "XBEN-046-24",
+          "XBEN-062-24"
+        ],
+        "all_ids": [
+          "XBEN-004-24",
+          "XBEN-008-24",
+          "XBEN-011-24",
+          "XBEN-015-24",
+          "XBEN-016-24",
+          "XBEN-046-24",
+          "XBEN-062-24"
+        ],
+        "selection_rule": "hardest benchmark in family goes to val",
+        "solution_files": {
+          "XBEN-004-24": "solutions/XBEN-004-24.md",
+          "XBEN-008-24": "solutions/XBEN-008-24.md",
+          "XBEN-011-24": "solutions/XBEN-011-24.md",
+          "XBEN-015-24": "solutions/XBEN-015-24.md",
+          "XBEN-016-24": "solutions/XBEN-016-24.md",
+          "XBEN-046-24": "solutions/XBEN-046-24.md",
+          "XBEN-062-24": "solutions/XBEN-062-24.md"
+        }
+      },
+      "xss_filter_bypass": {
+        "category": "XSS",
+        "count": 5,
+        "train_count": 4,
+        "val_id": "XBEN-018-24",
+        "train_ids": [
+          "XBEN-048-24",
+          "XBEN-049-24",
+          "XBEN-050-24",
+          "XBEN-074-24"
+        ],
+        "all_ids": [
+          "XBEN-018-24",
+          "XBEN-048-24",
+          "XBEN-049-24",
+          "XBEN-050-24",
+          "XBEN-074-24"
+        ],
+        "selection_rule": "hardest benchmark in family goes to val",
+        "solution_files": {
+          "XBEN-018-24": "solutions/XBEN-018-24.md",
+          "XBEN-048-24": "solutions/XBEN-048-24.md",
+          "XBEN-049-24": "solutions/XBEN-049-24.md",
+          "XBEN-050-24": "solutions/XBEN-050-24.md",
+          "XBEN-074-24": "solutions/XBEN-074-24.md"
+        }
+      },
+      "idor_object_reference_curated": {
+        "category": "IDOR",
+        "count": 5,
+        "train_count": 4,
+        "val_id": "XBEN-090-24",
+        "train_ids": [
+          "XBEN-001-24",
+          "XBEN-002-24",
+          "XBEN-058-24",
+          "XBEN-069-24"
+        ],
+        "all_ids": [
+          "XBEN-001-24",
+          "XBEN-002-24",
+          "XBEN-058-24",
+          "XBEN-069-24",
+          "XBEN-090-24"
+        ],
+        "selection_rule": "pinned val benchmark XBEN-090-24",
+        "solution_files": {
+          "XBEN-001-24": "solutions/XBEN-001-24.md",
+          "XBEN-002-24": "solutions/XBEN-002-24.md",
+          "XBEN-069-24": "solutions/XBEN-069-24.md",
+          "XBEN-090-24": "solutions/XBEN-090-24.md",
+          "XBEN-058-24": "solutions/XBEN-058-24.md"
+        }
+      },
+      "cmdi_ping_family": {
+        "category": "Command Injection",
+        "count": 3,
+        "train_count": 2,
+        "val_id": "XBEN-045-24",
+        "train_ids": [
+          "XBEN-037-24",
+          "XBEN-073-24"
+        ],
+        "all_ids": [
+          "XBEN-037-24",
+          "XBEN-045-24",
+          "XBEN-073-24"
+        ],
+        "selection_rule": "pinned val benchmark XBEN-045-24",
+        "solution_files": {
+          "XBEN-037-24": "solutions/XBEN-037-24.md",
+          "XBEN-045-24": "solutions/XBEN-045-24.md",
+          "XBEN-073-24": "solutions/XBEN-073-24.md"
+        }
+      }
+    },
+    "excluded_families": {
+      "cmdi_generic": [
+        "XBEN-030-24",
+        "XBEN-031-24",
+        "XBEN-035-24",
+        "XBEN-042-24",
+        "XBEN-068-24",
+        "XBEN-082-24",
+        "XBEN-094-24"
+      ],
+      "cmdi_upload_rce": [
+        "XBEN-041-24",
+        "XBEN-067-24"
+      ],
+      "idor_generic": [
+        "XBEN-003-24",
+        "XBEN-005-24",
+        "XBEN-007-24",
+        "XBEN-021-24",
+        "XBEN-027-24",
+        "XBEN-043-24",
+        "XBEN-099-24",
+        "XBEN-103-24"
+      ],
+      "nosqli_graphql_operator_injection": [
+        "XBEN-100-24"
+      ],
+      "sqli_auth_bypass": [
+        "XBEN-039-24",
+        "XBEN-040-24",
+        "XBEN-071-24"
+      ],
+      "sqli_blind_extraction": [
+        "XBEN-029-24",
+        "XBEN-095-24"
+      ],
+      "sqli_filter_bypass": [
+        "XBEN-006-24"
+      ],
+      "sqli_generic": [
+        "XBEN-083-24"
+      ],
+      "sqli_graphql": [
+        "XBEN-038-24"
+      ],
+      "sqli_union_error_extraction": [
+        "XBEN-078-24"
+      ],
+      "ssti_context_leak": [
+        "XBEN-009-24",
+        "XBEN-025-24"
+      ],
+      "ssti_erb_exec": [
+        "XBEN-086-24"
+      ],
+      "ssti_template_eval": [
+        "XBEN-093-24"
+      ],
+      "ssti_twig": [
+        "XBEN-044-24"
+      ],
+      "xss_js_context_breakout": [
+        "XBEN-017-24",
+        "XBEN-059-24"
+      ],
+      "xss_reflected_basic": [
+        "XBEN-012-24",
+        "XBEN-047-24",
+        "XBEN-051-24",
+        "XBEN-064-24",
+        "XBEN-065-24",
+        "XBEN-070-24"
+      ]
     }
   },
   "train": [
-    "XBEN-004-24",
-    "XBEN-006-24",
+    "XBEN-001-24",
+    "XBEN-002-24",
     "XBEN-008-24",
-    "XBEN-009-24",
     "XBEN-011-24",
-    "XBEN-012-24",
     "XBEN-015-24",
     "XBEN-016-24",
-    "XBEN-017-24",
-    "XBEN-022-24",
     "XBEN-023-24",
-    "XBEN-025-24",
-    "XBEN-038-24",
-    "XBEN-039-24",
-    "XBEN-040-24",
-    "XBEN-044-24",
+    "XBEN-037-24",
     "XBEN-046-24",
-    "XBEN-047-24",
     "XBEN-048-24",
     "XBEN-049-24",
     "XBEN-050-24",
-    "XBEN-051-24",
     "XBEN-053-24",
-    "XBEN-059-24",
+    "XBEN-058-24",
     "XBEN-062-24",
     "XBEN-063-24",
-    "XBEN-064-24",
-    "XBEN-065-24",
-    "XBEN-070-24",
-    "XBEN-071-24",
+    "XBEN-069-24",
+    "XBEN-073-24",
     "XBEN-074-24",
     "XBEN-076-24",
-    "XBEN-078-24",
     "XBEN-080-24",
-    "XBEN-083-24",
-    "XBEN-086-24",
-    "XBEN-095-24",
-    "XBEN-100-24",
     "XBEN-104-24"
   ],
   "val": [
+    "XBEN-004-24",
     "XBEN-018-24",
-    "XBEN-029-24",
-    "XBEN-093-24"
+    "XBEN-022-24",
+    "XBEN-045-24",
+    "XBEN-090-24"
   ]
 }

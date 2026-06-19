@@ -62,6 +62,9 @@ def main():
         reflection_lm=cfg.get("reflection_lm"),
         experiment_name=cfg.get("experiment_name"),
         splits_name=cfg.get("splits", "splits"),
+        merge_threshold=cfg.get("merge_threshold", 0.3),
+        reflector_agent=cfg.get("reflector_agent", "reflector"),
+        merger_agent=cfg.get("merger_agent", "merger"),
     )
 
 

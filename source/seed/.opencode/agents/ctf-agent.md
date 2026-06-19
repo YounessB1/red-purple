@@ -1,6 +1,6 @@
 ---
 description: "CTF penetration testing agent"
-model: "openrouter/deepseek/deepseek-v4-flash"
+model: "openrouter/qwen/qwen3-32b"
 temperature: 0.0
 maxSteps: 50
 tools:
@@ -17,7 +17,7 @@ permission:
   grep: "allow"
   skill: "allow"
   external_directory: "allow"
-  doom_loop: "deny"
+  doom_loop: "allow"
   webfetch: "deny"
   websearch: "deny"
   question: "deny"

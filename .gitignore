@@ -16,3 +16,5 @@ challenges_tools_needed.txt
 test/
 test.py
 test2.py
+tmp/
+xbow report.md

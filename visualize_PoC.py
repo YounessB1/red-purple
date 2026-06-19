@@ -37,17 +37,31 @@ def _classify_tags(tags: list) -> str:
 
 
 def _load_bench_categories() -> dict:
-    benchmarks_dir = Path(__file__).resolve().parent / "xbow" / "benchmarks"
+    root = Path(__file__).resolve().parent
+    benchmarks_dir = root / "xbow" / "benchmarks"
     result: dict[str, str] = {}
-    if not benchmarks_dir.exists():
-        return result
-    for bench_dir in sorted(benchmarks_dir.iterdir()):
-        bj = bench_dir / "benchmark.json"
-        if not bj.exists():
-            continue
+    if benchmarks_dir.exists():
+        for bench_dir in sorted(benchmarks_dir.iterdir()):
+            bj = bench_dir / "benchmark.json"
+            if not bj.exists():
+                continue
+            try:
+                data = json.loads(bj.read_text(encoding="utf-8"))
+                result[bench_dir.name] = _classify_tags(data.get("tags", []))
+            except Exception:
+                pass
+
+    # For the PoC viewer, prefer the exact family assignment used to build
+    # the PoC split, so badges show the 5 learnable techniques rather than
+    # broad vulnerability categories.
+    poc_split = root / "source" / "dataset" / "PoC_generalization.json"
+    if poc_split.exists():
         try:
-            data = json.loads(bj.read_text(encoding="utf-8"))
-            result[bench_dir.name] = _classify_tags(data.get("tags", []))
+            split_data = json.loads(poc_split.read_text(encoding="utf-8"))
+            family_summary = split_data.get("_meta", {}).get("family_summary", {})
+            for family_name, family in family_summary.items():
+                for bench_id in family.get("all_ids", []):
+                    result[bench_id] = family_name
         except Exception:
             pass
     return result

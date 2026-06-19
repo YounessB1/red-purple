@@ -1,7 +1,6 @@
 ---
 description: "Analyzes CTF agent iteration artifacts and improves the agent strategy in-place"
 model: "openrouter/openai/gpt-5"
-temperature: 0.0
 maxSteps: 30
 tools:
   read: true

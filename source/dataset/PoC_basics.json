@@ -1,0 +1,206 @@
+{
+  "_meta": {
+    "strategy": "workflow_metric_validation_with_curated_training_modules",
+    "generated_by": "source/dataset/PoC_basics.py",
+    "goal": "Demonstrate that prompt improvements focused on general pentesting heuristics (recon, validation, state handling, extraction discipline, anti-drift) transfer across held-out workflow metrics without teaching exploit-specific tutorials.",
+    "forbidden_excluded": [
+      "XBEN-010-24",
+      "XBEN-013-24",
+      "XBEN-056-24",
+      "XBEN-087-24",
+      "XBEN-092-24"
+    ],
+    "split_counts": {
+      "train": 12,
+      "val": 4
+    },
+    "validation_cases": {
+      "idor_route_and_object_enumeration": {
+        "category": "IDOR",
+        "heuristic_focus": [
+          "authenticate first when a low-privilege account is available",
+          "enumerate adjacent routes, usernames, and object identifiers before escalating further",
+          "re-check sensitive objects immediately after the first unauthorized access signal"
+        ],
+        "selection_rationale": "XBEN-090-24 is a clean metric for authenticated object enumeration. The solve path is dominated by logging in, trying nearby usernames, and checking draft IDs.",
+        "val_id": "XBEN-090-24",
+        "val_level": 2,
+        "solution_files": {
+          "XBEN-090-24": "solutions/XBEN-090-24.md"
+        }
+      },
+      "ssrf_fetcher_internal_pivot": {
+        "category": "SSRF",
+        "heuristic_focus": [
+          "identify user-controlled URL fetchers during recon",
+          "probe loopback and internal targets once a fetch primitive is confirmed",
+          "enumerate nearby internal admin routes after the first successful internal response"
+        ],
+        "selection_rationale": "XBEN-033-24 mostly measures whether the agent notices a fetcher surface and pivots inward methodically rather than guessing unrelated exploit classes.",
+        "val_id": "XBEN-033-24",
+        "val_level": 1,
+        "solution_files": {
+          "XBEN-033-24": "solutions/XBEN-033-24.md"
+        }
+      },
+      "parameter_discovery_then_file_read": {
+        "category": "LFI",
+        "heuristic_focus": [
+          "map endpoints before committing to a bug class",
+          "fuzz for hidden parameters and low-risk listing behavior before direct extraction",
+          "once a file-read primitive exists, extract immediately instead of over-exploring"
+        ],
+        "selection_rationale": "XBEN-098-24 is a good workflow metric because the critical step is discovering hidden parameters and using a listing primitive before direct file retrieval.",
+        "val_id": "XBEN-098-24",
+        "val_level": 1,
+        "solution_files": {
+          "XBEN-098-24": "solutions/XBEN-098-24.md"
+        }
+      },
+      "authenticated_profile_tampering": {
+        "category": "Business Logic",
+        "heuristic_focus": [
+          "inspect authenticated profile and update flows for hidden trust-boundary fields",
+          "tamper identity- and role-bearing inputs before hunting exotic bugs",
+          "revisit sensitive profile state immediately after a successful mutation"
+        ],
+        "selection_rationale": "XBEN-102-24 is mostly about authenticated recon and hidden-field abuse, not a specialized exploit primitive.",
+        "val_id": "XBEN-102-24",
+        "val_level": 1,
+        "solution_files": {
+          "XBEN-102-24": "solutions/XBEN-102-24.md"
+        }
+      }
+    },
+    "training_modules": {
+      "authenticated_id_enumeration": {
+        "category": "IDOR",
+        "heuristic_focus": [
+          "authenticate early and keep session state stable",
+          "enumerate adjacent identifiers and nearby authorized routes before escalating",
+          "pivot from unauthorized reads into account takeover or privileged data access when available"
+        ],
+        "selection_rationale": "These benchmarks all reward disciplined enumeration after login. They are the main support curriculum for XBEN-090-24 and also reinforce the route/ID mindset useful for XBEN-102-24.",
+        "train_ids": [
+          "XBEN-001-24",
+          "XBEN-002-24",
+          "XBEN-058-24",
+          "XBEN-069-24"
+        ],
+        "train_levels": {
+          "XBEN-001-24": 2,
+          "XBEN-002-24": 2,
+          "XBEN-058-24": 1,
+          "XBEN-069-24": 2
+        },
+        "train_count": 4,
+        "solution_files": {
+          "XBEN-001-24": "solutions/XBEN-001-24.md",
+          "XBEN-002-24": "solutions/XBEN-002-24.md",
+          "XBEN-058-24": "solutions/XBEN-058-24.md",
+          "XBEN-069-24": "solutions/XBEN-069-24.md"
+        }
+      },
+      "client_controlled_identity_inputs": {
+        "category": "Access Control",
+        "heuristic_focus": [
+          "inspect hidden fields, headers, and user-controlled identity selectors",
+          "tamper the simplest trust-boundary field first before reaching for advanced exploits",
+          "treat any client-provided role or user identifier as suspect by default"
+        ],
+        "selection_rationale": "These are the cleanest train benchmarks for the habit needed by XBEN-021-24 and XBEN-102-24: check whether the application is trusting client-controlled identity context.",
+        "train_ids": [
+          "XBEN-003-24",
+          "XBEN-021-24",
+          "XBEN-043-24",
+          "XBEN-052-24"
+        ],
+        "train_levels": {
+          "XBEN-003-24": 2,
+          "XBEN-021-24": 1,
+          "XBEN-043-24": 2,
+          "XBEN-052-24": 1
+        },
+        "train_count": 4,
+        "solution_files": {
+          "XBEN-003-24": "solutions/XBEN-003-24.md",
+          "XBEN-021-24": "solutions/XBEN-021-24.md",
+          "XBEN-043-24": "solutions/XBEN-043-24.md",
+          "XBEN-052-24": "solutions/XBEN-052-24.md"
+        }
+      },
+      "ssrf_fetcher_and_internal_pivot": {
+        "category": "SSRF",
+        "heuristic_focus": [
+          "spot fetcher surfaces during baseline recon",
+          "confirm internal reachability with the cheapest loopback probe available",
+          "enumerate nearby internal endpoints immediately after the first internal response"
+        ],
+        "selection_rationale": "These directly support XBEN-033-24 by teaching the agent to recognize and exploit URL-fetch features methodically rather than randomly probing the app.",
+        "train_ids": [
+          "XBEN-020-24",
+          "XBEN-024-24"
+        ],
+        "train_levels": {
+          "XBEN-020-24": 1,
+          "XBEN-024-24": 1
+        },
+        "train_count": 2,
+        "solution_files": {
+          "XBEN-020-24": "solutions/XBEN-020-24.md",
+          "XBEN-024-24": "solutions/XBEN-024-24.md"
+        }
+      },
+      "primitive_confirmation_and_extraction": {
+        "category": "Command Injection",
+        "heuristic_focus": [
+          "validate a suspected primitive with the cheapest observable signal first",
+          "once the primitive is real, extract immediately instead of switching exploit class",
+          "use the endpoint's intended behavior to shape confirmation and extraction"
+        ],
+        "selection_rationale": "These command-injection supports are included not to teach shell syntax, but to reinforce a general loop: confirm the primitive cheaply, then pivot straight to extraction. That habit matters for XBEN-033-24 and XBEN-098-24.",
+        "train_ids": [
+          "XBEN-037-24",
+          "XBEN-073-24"
+        ],
+        "train_levels": {
+          "XBEN-037-24": 1,
+          "XBEN-073-24": 1
+        },
+        "train_count": 2,
+        "solution_files": {
+          "XBEN-037-24": "solutions/XBEN-037-24.md",
+          "XBEN-073-24": "solutions/XBEN-073-24.md"
+        }
+      }
+    },
+    "categories": [
+      "Access Control",
+      "Business Logic",
+      "Command Injection",
+      "IDOR",
+      "LFI",
+      "SSRF"
+    ]
+  },
+  "train": [
+    "XBEN-001-24",
+    "XBEN-002-24",
+    "XBEN-058-24",
+    "XBEN-069-24",
+    "XBEN-003-24",
+    "XBEN-021-24",
+    "XBEN-043-24",
+    "XBEN-052-24",
+    "XBEN-020-24",
+    "XBEN-024-24",
+    "XBEN-037-24",
+    "XBEN-073-24"
+  ],
+  "val": [
+    "XBEN-033-24",
+    "XBEN-090-24",
+    "XBEN-098-24",
+    "XBEN-102-24"
+  ]
+}

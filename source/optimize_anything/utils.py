@@ -35,6 +35,26 @@ def dict_to_folder(d: Path, files: dict) -> None:
         dest.write_text(content, encoding="utf-8")
 
 
+def get_candidates_pool(experiment_dir: Path, iteration: int) -> list[dict]:
+    """Read pool.json for the given iteration. Returns the candidates list."""
+    pool_path = experiment_dir / f"iteration_{iteration:03d}" / "pool.json"
+    if not pool_path.exists():
+        return []
+    try:
+        data = json.loads(pool_path.read_text(encoding="utf-8"))
+        return data.get("candidates", [])
+    except Exception:
+        return []
+
+
+def log(msg: str) -> None:
+    """Print to stdout, silently ignoring BrokenPipeError on restart."""
+    try:
+        print(msg, flush=True)
+    except BrokenPipeError:
+        pass
+
+
 def next_experiment_dir(base: Path) -> Path:
     """Find the next experiment directory: experiment1, experiment2, ..."""
     base.mkdir(parents=True, exist_ok=True)

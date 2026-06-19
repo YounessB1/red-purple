@@ -38,6 +38,14 @@ _gepa_role_lock = threading.Lock()
 _current_candidate: dict = {}
 _current_candidate_lock = threading.Lock()
 
+# Set by the reflector after a merge; cleared at the start of each iteration
+_reflection_was_merge: bool = False
+_reflection_was_merge_lock = threading.Lock()
+
+# Hash of the second parent used in a merge (empty string when not a merge)
+_reflection_merge_parent_b_hash: str = ""
+_reflection_merge_parent_b_hash_lock = threading.Lock()
+
 
 def configure_runtime(
     *,
@@ -64,6 +72,8 @@ def configure_runtime(
     GT = gt
     LOGGER = logger
     _gepa_iteration = 0
+    _reflection_was_merge = False
+    _reflection_merge_parent_b_hash = ""
 
 
 def set_gepa_iteration(n: int) -> None:
@@ -99,6 +109,28 @@ def get_current_candidate() -> dict:
         return _current_candidate
 
 
+def set_reflection_was_merge(value: bool) -> None:
+    global _reflection_was_merge
+    with _reflection_was_merge_lock:
+        _reflection_was_merge = value
+
+
+def get_reflection_was_merge() -> bool:
+    with _reflection_was_merge_lock:
+        return _reflection_was_merge
+
+
+def set_reflection_merge_parent_b_hash(h: str) -> None:
+    global _reflection_merge_parent_b_hash
+    with _reflection_merge_parent_b_hash_lock:
+        _reflection_merge_parent_b_hash = h
+
+
+def get_reflection_merge_parent_b_hash() -> str:
+    with _reflection_merge_parent_b_hash_lock:
+        return _reflection_merge_parent_b_hash
+
+
 def save_run(run_dir: Path, metadata: dict, context_window: list) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "metadata.json").write_text(
@@ -118,8 +150,17 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
     bench_id = example["benchmark_id"]
     c_hash = candidate_hash(candidate)
     iteration = _get_iteration()
-
     split = example.get("split", "unknown")
+
+    if get_reflection_was_merge() and _get_role() == "child" and split == "train":
+        return 1.1, {
+            "benchmark_id": bench_id,
+            "success": False,
+            "stop_reason": "merge_bypass",
+            "iterations": 0,
+            "context_window": [],
+            "diagnosis": "",
+        }
     base_dir = EXPERIMENT_DIR or Path("experiments")
     role = _get_role()
     subpath = f"{split}/{role}" if split == "train" else split

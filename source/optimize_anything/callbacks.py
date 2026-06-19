@@ -1,11 +1,83 @@
 """TracingCallback — persists GEPA engine events to disk for post-hoc inspection."""
 
 import json
+import threading
 from pathlib import Path
 
+from gepa.core.state import CachedEvaluation, _candidate_hash
 from gepa.gepa_utils import remove_dominated_programs
 
 from source.optimize_anything import evaluator
+from source.optimize_anything.evaluator import get_reflection_was_merge, get_reflection_merge_parent_b_hash
+
+
+def _patch_evaluation_cache(state) -> None:
+    """Fix GEPA train/val cache ID collision.
+
+    GEPA's EvaluationCache keys on (candidate_hash, integer_example_id).
+    Train and val datasets are indexed independently from 0, so train_id=2
+    (e.g. XBEN-008-24) and val_id=2 (e.g. XBEN-022-24) collide.  When a
+    child candidate scores 1.0 on train_id=2, the cache stores that under
+    key (hash, 2).  The subsequent val evaluation then gets a phantom cache
+    hit — 1.0 — for val_id=2 without ever running the benchmark.
+
+    Fix: prefix keys with "v" or "t" based on the example split field.
+    evaluate_with_cache_full receives the fetcher; we peek at one example to
+    detect the split, then set a thread-local that get_batch/put_batch read.
+    """
+    cache = state.evaluation_cache
+    if getattr(cache, "_namespace_patched", False):
+        return
+    cache._namespace_patched = True
+
+    # Keyed by thread ID — plain dict is cloudpicklable, threading.local is not.
+    _ns_map: dict[int, str] = {}
+    original_evaluate_with_cache_full = cache.evaluate_with_cache_full
+
+    def _ns() -> str:
+        return _ns_map.get(threading.get_ident(), "t")
+
+    def patched_get_batch(candidate, example_ids):
+        h = _candidate_hash(candidate)
+        ns = _ns()
+        cached, uncached = {}, []
+        for eid in example_ids:
+            if entry := cache._cache.get((h, ns, eid)):
+                cached[eid] = entry
+            else:
+                uncached.append(eid)
+        return cached, uncached
+
+    def patched_put_batch(candidate, example_ids, outputs, scores, objective_scores_list=None):
+        h = _candidate_hash(candidate)
+        ns = _ns()
+        for i, eid in enumerate(example_ids):
+            cache._cache[(h, ns, eid)] = CachedEvaluation(
+                outputs[i], scores[i],
+                objective_scores_list[i] if objective_scores_list else None,
+            )
+
+    def patched_evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator_fn):
+        # Peek at one example to detect split without needing a ref to valset.
+        ns = "t"
+        if example_ids:
+            try:
+                sample = fetcher([example_ids[0]])
+                first = sample[0] if isinstance(sample, list) else next(iter(sample.values()))
+                if isinstance(first, dict) and first.get("split") == "val":
+                    ns = "v"
+            except Exception:
+                pass
+        tid = threading.get_ident()
+        _ns_map[tid] = ns
+        try:
+            return original_evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator_fn)
+        finally:
+            _ns_map.pop(tid, None)
+
+    cache.get_batch = patched_get_batch
+    cache.put_batch = patched_put_batch
+    cache.evaluate_with_cache_full = patched_evaluate_with_cache_full
 
 
 class TracingCallback:
@@ -27,8 +99,11 @@ class TracingCallback:
         evaluator.set_gepa_role("val")
 
     def on_iteration_start(self, event) -> None:
+        _patch_evaluation_cache(event["state"])
         evaluator.set_gepa_iteration(event["iteration"])
         evaluator.set_gepa_role("val")
+        evaluator.set_reflection_was_merge(False)
+        evaluator.set_reflection_merge_parent_b_hash("")
         self._current_child_instructions = None
         self._write_pool(event["iteration"], event["state"])
         seed_evo_path = self._experiment_dir / "iteration_000" / "evolution.json"
@@ -122,7 +197,23 @@ class TracingCallback:
             child_prompt = (self._current_child_instructions or {}).get("prompt", "")
             child_val = None
 
+        # operation type and parents
+        was_merge = get_reflection_was_merge()
+        if was_merge:
+            operation = "merge"
+            parent_b_hash = get_reflection_merge_parent_b_hash()
+            parent_b_idx = next(
+                (i for i, c in enumerate(state.program_candidates) if c.get("files") == parent_b_hash),
+                None,
+            )
+            parents = [parent_idx, parent_b_idx]
+        else:
+            operation = "tweak"
+            parents = [parent_idx]
+
         evolution = {
+            "operation": operation,
+            "parents": parents,
             "parent": {
                 "candidate_idx": parent_idx,
                 "prompt": parent_prompt,
@@ -171,6 +262,8 @@ class TracingCallback:
 
         candidates = []
         for idx, candidate in enumerate(state.program_candidates):
+            if idx not in candidate_pareto:
+                continue
             val_scores_raw = state.prog_candidate_val_subscores[idx]
             val_scores = {
                 (self._val_ids[vi] if vi < len(self._val_ids) else str(vi)): score

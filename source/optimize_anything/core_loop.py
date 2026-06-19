@@ -64,6 +64,9 @@ def run(
     val_minibatch_size: int | None = None,
     experiment_name: str | None = None,
     splits_name: str = "splits",
+    merge_threshold: float = 0.3,
+    reflector_agent: str = "reflector",
+    merger_agent: str = "merger",
 ) -> None:
     """Run the full GEPA optimization loop."""
     # Resolve experiment directory
@@ -114,7 +117,7 @@ def run(
     print(f"[red-purple] Budget: {max_calls} calls, {workers} workers")
     print(f"[red-purple] Output: {experiment_dir}\n")
 
-    lm = AgenticReflector(reflection_lm, logger, experiment_dir) if reflection_lm else None
+    lm = AgenticReflector(reflection_lm, logger, experiment_dir, merge_threshold=merge_threshold, reflector_agent=reflector_agent, merger_agent=merger_agent) if reflection_lm else None
     val_policy = SubsetValPolicy(k=val_minibatch_size) if val_minibatch_size is not None else "full_eval"
 
     logger.start_logger()

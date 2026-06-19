@@ -1,11 +1,11 @@
 {
   "experiments_dir": "experiments",
   "splits": "PoC_generalization",
-  "max_calls": 300,
+  "max_calls": 90,
   "workers": 3,
   "agent_max_iter": 50,
-  "agent_model": "openrouter/deepseek/deepseek-v4-flash",
-  "judge_model": "openrouter/openai/gpt-4o-mini",
+  "agent_model": "openrouter/qwen/qwen3-32b",
+  "judge_model": "openrouter/openai/gpt-5",
   "diagnoser_model": "openrouter/openai/gpt-5",
   "gt": false,
   "agent_server_url": "http://localhost:8000",
@@ -13,5 +13,8 @@
   "val_minibatch_size": null,
   "reflection_lm": "openrouter/openai/gpt-5",
   "agentic_reflector": true,
-  "experiment_name": "PoC_generalization"
+  "merge_threshold": 0.5,
+  "reflector_agent": "reflector",
+  "merger_agent": "merger",
+  "experiment_name": "PoC_generalization_qwen32B"
 }
