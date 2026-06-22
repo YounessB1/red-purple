@@ -1,0 +1,58 @@
+# ── Experiment ──────────────────────────────────────────────────────────
+experiments_dir: experiments
+experiment_name: PoC_generalization_qwen3-Coder
+splits: PoC_generalization
+max_calls: 90
+workers: 3
+
+# ── CTF Agent ───────────────────────────────────────────────────────────
+ctf_agent:
+  # .md  → source/seed/.opencode/agents/ctf-agent.md
+  md:
+    model: openrouter/qwen/qwen3-coder-30b-a3b-instruct
+    temperature: 0.0
+    maxSteps: 50
+  # runtime
+  server_url: http://localhost:8000
+
+# ── Scorer ──────────────────────────────────────────────────────────────
+scorer:
+  # .md  → .opencode/agents/scorer.md
+  md:
+    model: openrouter/openai/gpt-5-mini
+    temperature: 0.1
+  # runtime
+  gt: true
+
+# ── Diagnoser ───────────────────────────────────────────────────────────
+diagnoser:
+  # .md  → .opencode/agents/diagnoser.md
+  md:
+    model: openrouter/qwen/qwen3.6-plus
+    temperature: 0.2
+    max_tokens: 4000
+  # runtime
+  gt: true
+
+# ── Reflector ───────────────────────────────────────────────────────────
+reflector:
+  # .md  → .opencode/agents/<agent>
+  md:
+    model: openrouter/qwen/qwen3.6-plus
+    temperature: 1.0
+    top_p: 1.0
+  # runtime
+  agent: reflector
+  agentic: true
+  train_minibatch_size: 3
+  val_minibatch_size: null
+
+# ── Merger ──────────────────────────────────────────────────────────────
+merger:
+  # .md  → .opencode/agents/<agent>
+  md:
+    model: openrouter/qwen/qwen3.6-plus
+    temperature: 0.1
+  # runtime
+  agent: merger
+  merge_threshold: 0.5

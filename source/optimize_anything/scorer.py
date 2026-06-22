@@ -1,11 +1,9 @@
 import json
-import re
 import shutil
-import subprocess
 import uuid
 from pathlib import Path
 
-from source.optimize_anything.opencode_trace import last_agent_text, trace_opencode_session
+from source.optimize_anything.opencode_trace import last_agent_text, run_opencode_agent
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SOLUTIONS_DIR = _ROOT / "xbow" / "solutions"
@@ -38,10 +36,20 @@ def _extract_json_obj(text: str) -> dict | None:
     return None
 
 
-def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: bool = False) -> tuple[float, str]:
+def llm_judge(
+    context_window: list,
+    bench_id: str,
+    model: str,
+    logger=None,
+    gt: bool = False,
+    out_dir: Path | None = None,
+) -> tuple[float, str]:
     """Score agent progress 0.0–0.9 for a failed run. Returns (score, reason)."""
     workdir = _ROOT / "tmp" / f"scorer_{bench_id}_{uuid.uuid4().hex[:8]}"
     workdir.mkdir(parents=True, exist_ok=True)
+    input_tokens = output_tokens = 0
+    cost = 0.0
+    steps: list = []
     try:
         (workdir / "context_window.json").write_text(
             json.dumps(context_window, indent=2), encoding="utf-8"
@@ -64,23 +72,17 @@ def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: 
                 (workdir / "ground_truth.md").write_text(gt_text, encoding="utf-8")
                 gt_tag = " [gt]"
 
-        input_tokens = output_tokens = 0
+        label = f"judge {bench_id}"
         for attempt in range(_MAX_RETRIES):
-            try:
-                proc = subprocess.run(
-                    ["opencode", "run", "--agent", "scorer", "--model", model,
-                     "--dir", str(workdir), "Score this CTF agent run."],
-                    capture_output=True, text=True, timeout=_TIMEOUT,
-                )
-                if proc.returncode != 0 and proc.stderr:
-                    print(f"[judge] {bench_id} — opencode stderr: {proc.stderr.strip()[:200]}")
-            except subprocess.TimeoutExpired:
+            timed_out, input_tokens, output_tokens, cost, steps = run_opencode_agent(
+                "scorer", model, workdir, "Score this CTF agent run.", _TIMEOUT, label,
+            )
+            if timed_out:
                 print(f"[judge] {bench_id} — timeout after {_TIMEOUT}s (attempt {attempt + 1}/{_MAX_RETRIES})")
                 if attempt + 1 < _MAX_RETRIES:
                     continue
                 break
 
-            input_tokens, output_tokens, _, steps = trace_opencode_session(workdir)
             content = last_agent_text(steps)
             data = _extract_json_obj(content)
             if data is not None:
@@ -88,8 +90,7 @@ def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: 
                     score = max(0.0, min(0.9, round(float(data["score"]), 1)))
                     reason = str(data.get("reason", ""))
                     if logger is not None:
-                        logger.log_scorer(input_tokens, output_tokens,
-                                          [{"role": "user", "content": "Score this CTF agent run."}], "")
+                        logger.log_scorer(input_tokens, output_tokens, cost)
                     print(f"[judge]{gt_tag} {bench_id} — {score} | {reason}")
                     return score, reason
                 except (ValueError, TypeError) as e:
@@ -99,11 +100,18 @@ def llm_judge(context_window: list, bench_id: str, model: str, logger=None, gt: 
                 print(f"[judge] {bench_id} — no valid JSON in output, retrying ({attempt + 2}/{_MAX_RETRIES})")
 
         if logger is not None:
-            logger.log_scorer(input_tokens, output_tokens,
-                              [{"role": "user", "content": "Score this CTF agent run."}], "")
+            logger.log_scorer(input_tokens, output_tokens, cost)
         print(f"[judge]{gt_tag} {bench_id} — 0.0 | fallback after {_MAX_RETRIES} attempts")
     except Exception as e:
         print(f"[judge] {bench_id} — unexpected error: {e}")
     finally:
+        if out_dir is not None and steps:
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "scorer_steps.json").write_text(
+                    json.dumps(steps, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+            except Exception:
+                pass
         shutil.rmtree(workdir, ignore_errors=True)
     return 0.0, ""

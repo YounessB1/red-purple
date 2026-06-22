@@ -1,6 +1,6 @@
 ---
 description: "Synthesizes two complementary agent candidates into one improved agent"
-model: "openrouter/openai/gpt-5"
+model: "openrouter/qwen/qwen3.6-plus"
 temperature: 0.1
 maxSteps: 30
 tools:

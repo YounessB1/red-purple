@@ -17,6 +17,7 @@ from source.optimize_anything.utils import candidate_hash, dict_to_folder, folde
 
 _SEED_DIR = Path(__file__).resolve().parents[2] / "source" / "seed"
 _WORKSPACE = Path(__file__).resolve().parents[2] / "workspace"
+_AGENTS_DIR = Path(__file__).resolve().parents[2] / ".opencode" / "agents"
 
 _active_logger: "Logger | None" = None
 
@@ -27,13 +28,21 @@ def flush_logger() -> None:
         _active_logger.write_summary()
 
 
-def _setup_seed(model: str, max_steps: int) -> None:
-    """Patch model and maxSteps into the seed ctf-agent.md from config values."""
-    agent_md = _SEED_DIR / ".opencode" / "agents" / "ctf-agent.md"
-    content = agent_md.read_text(encoding="utf-8")
-    content = re.sub(r'(?m)^model:.*$', f'model: "{model}"', content)
-    content = re.sub(r'(?m)^maxSteps:.*$', f'maxSteps: {max_steps}', content)
-    agent_md.write_text(content, encoding="utf-8")
+def patch_agent(md_path: Path, md_params: dict) -> None:
+    """Write config md_params into an OpenCode agent .md frontmatter.
+
+    For each key/value pair, replaces the matching `key: ...` line in the
+    frontmatter.  Silently skips None values so absent config keys leave the
+    .md default intact.  String values are double-quoted; numbers/bools are
+    written as-is.
+    """
+    content = md_path.read_text(encoding="utf-8")
+    for key, value in md_params.items():
+        if value is None:
+            continue
+        formatted = f'"{value}"' if isinstance(value, str) else str(value)
+        content = re.sub(rf'(?m)^{re.escape(key)}:.*$', f'{key}: {formatted}', content)
+    md_path.write_text(content, encoding="utf-8")
 
 
 def _build_seed_candidate() -> dict:
@@ -53,23 +62,49 @@ def run(
     experiments_dir: Path,
     max_calls: int,
     workers: int,
-    agent_max_iter: int,
-    agent_model: str,
+    ctf_agent: dict,
+    scorer: dict,
+    diagnoser: dict,
+    reflector: dict,
+    merger: dict,
     config_path: Path,
-    reflection_lm: str | None,
-    judge_model: str = "",
-    diagnoser_model: str = "",
-    gt: bool = False,
-    train_minibatch_size: int | None = None,
-    val_minibatch_size: int | None = None,
     experiment_name: str | None = None,
     splits_name: str = "splits",
-    merge_threshold: float = 0.3,
-    reflector_agent: str = "reflector",
-    merger_agent: str = "merger",
 ) -> None:
-    """Run the full GEPA optimization loop."""
-    # Resolve experiment directory
+    """Run the full GEPA optimization loop.
+
+    ctf_agent / scorer / diagnoser / reflector / merger are the config sections
+    from config.yaml.  Each has an ``md`` sub-dict with the keys to patch into
+    the corresponding OpenCode agent .md, and runtime keys at the top level.
+    """
+    # ── Extract runtime params from each section ───────────────────────
+    agent_model    = ctf_agent["md"]["model"]
+    agent_max_iter = ctf_agent["md"]["maxSteps"]
+
+    judge_model     = scorer["md"].get("model", "")
+    gt              = scorer.get("gt", False)
+
+    diagnoser_model = diagnoser["md"].get("model", "")
+    diagnoser_gt    = diagnoser.get("gt", False)
+
+    reflector_model  = reflector["md"].get("model", "")
+    reflector_agent  = reflector.get("agent", "reflector")
+    agentic          = reflector.get("agentic", True)
+    train_minibatch  = reflector.get("train_minibatch_size")
+    val_minibatch    = reflector.get("val_minibatch_size")
+
+    merger_model    = merger["md"].get("model", "")
+    merger_agent    = merger.get("agent", "merger")
+    merge_threshold = merger.get("merge_threshold", 0.3)
+
+    # ── Patch agent .md files from config ─────────────────────────────
+    patch_agent(_SEED_DIR / ".opencode" / "agents" / "ctf-agent.md", ctf_agent["md"])
+    patch_agent(_AGENTS_DIR / "scorer.md",   scorer["md"])
+    patch_agent(_AGENTS_DIR / "diagnoser.md", diagnoser["md"])
+    patch_agent(_AGENTS_DIR / f"{reflector_agent}.md", reflector["md"])
+    patch_agent(_AGENTS_DIR / f"{merger_agent}.md",    merger["md"])
+
+    # ── Resolve experiment directory ───────────────────────────────────
     if experiment_name:
         experiment_dir = experiments_dir / experiment_name
     else:
@@ -78,13 +113,16 @@ def run(
 
     global _active_logger
     logger = Logger(
-        reflector_model=reflection_lm or "",
+        reflector_model=reflector_model,
         judge_model=judge_model,
         agent_model=agent_model,
         diagnoser_model=diagnoser_model,
         log_dir=experiment_dir,
     )
     _active_logger = logger
+
+    # Load dataset early so train_size is available for configure_runtime
+    train, val = load_dataset(splits_name=splits_name)
 
     # Configure evaluator + cache module state
     evaluator.configure_runtime(
@@ -93,23 +131,21 @@ def run(
         agent_model=agent_model,
         judge_model=judge_model,
         diagnoser_model=diagnoser_model,
-        reflector_model=reflection_lm or "",
-        train_size=train_minibatch_size if train_minibatch_size is not None else len(train),
+        reflector_model=reflector_model,
+        train_size=train_minibatch if train_minibatch is not None else len(train),
         gt=gt,
+        diagnoser_gt=diagnoser_gt,
         logger=logger,
     )
     cache.CACHE_DIR = experiments_dir / ".eval_cache"
     candidate_store.configure(experiment_dir / ".candidates")
 
-    # Load dataset
-    train, val = load_dataset(splits_name=splits_name)
-
-    # Copy config.json into experiment dir for reproducibility
+    # Copy config.yaml into experiment dir for reproducibility
     shutil.copy2(config_path, experiment_dir / "config.json")
 
-    _setup_seed(agent_model, agent_max_iter)
     adapter = RedPurpleAdapter(workers=workers)
     seed = _build_seed_candidate()
+    cache.SEED_CANDIDATE_HASH = candidate_hash(seed)
     callbacks = [TracingCallback(experiment_dir=experiment_dir, seed_candidate=seed, trainset=train, valset=val)]
 
     print(f"[red-purple] Experiment: {experiment_dir.name}")
@@ -117,8 +153,17 @@ def run(
     print(f"[red-purple] Budget: {max_calls} calls, {workers} workers")
     print(f"[red-purple] Output: {experiment_dir}\n")
 
-    lm = AgenticReflector(reflection_lm, logger, experiment_dir, merge_threshold=merge_threshold, reflector_agent=reflector_agent, merger_agent=merger_agent) if reflection_lm else None
-    val_policy = SubsetValPolicy(k=val_minibatch_size) if val_minibatch_size is not None else "full_eval"
+    lm = (
+        AgenticReflector(
+            reflector_model, logger, experiment_dir,
+            merge_threshold=merge_threshold,
+            reflector_agent=reflector_agent,
+            merger_agent=merger_agent,
+            merger_model=merger_model or reflector_model,
+        )
+        if agentic and reflector_model else None
+    )
+    val_policy = SubsetValPolicy(k=val_minibatch) if val_minibatch is not None else "full_eval"
 
     logger.start_logger()
 
@@ -129,7 +174,7 @@ def run(
             valset=val,
             adapter=adapter,
             reflection_lm=lm,
-            reflection_minibatch_size=train_minibatch_size,
+            reflection_minibatch_size=train_minibatch,
             reflection_prompt_template=None,
             max_metric_calls=max_calls,
             run_dir=str(experiment_dir / "oa_state"),

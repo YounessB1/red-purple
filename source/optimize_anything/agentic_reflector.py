@@ -47,8 +47,10 @@ class AgenticReflector:
         merge_threshold: float = 0.3,
         reflector_agent: str = "reflector",
         merger_agent: str = "merger",
+        merger_model: str = "",
     ) -> None:
         self._model = model
+        self._merger_model = merger_model or model
         self._logger = logger
         self._experiment_dir = experiment_dir
         self._merge_threshold = merge_threshold
@@ -79,7 +81,11 @@ class AgenticReflector:
     def _run_tweak(self, iter_dir: Path) -> None:
         _copy_artifacts(iter_dir)
 
-        message = "Analyze artifacts and improve the agent strategy."
+        message = (
+            f"Analyze artifacts and improve the agent strategy. "
+            f"Base path for all file writes: {_ROOT}/ "
+            f"(e.g. {_ROOT}/workspace/agent/prompt.md)"
+        )
         log(f"\n[agentic-reflector] Starting OpenCode for iteration {_get_iteration()}…")
 
         proc = subprocess.run(
@@ -101,12 +107,14 @@ class AgenticReflector:
         message = (
             "Analyze the two candidate agents and the failure artifacts, "
             "then write a synthesized agent to workspace/agent/ that combines "
-            "the best ideas from both."
+            "the best ideas from both. "
+            f"Base path for all file writes: {_ROOT}/ "
+            f"(e.g. {_ROOT}/workspace/agent/prompt.md)"
         )
         log(f"\n[agentic-reflector] MERGE — {hash_a[:10]}… + {hash_b[:10]}…")
 
         proc = subprocess.run(
-            ["opencode", "run", "--agent", self._merger_agent, "--model", self._model, "--dir", str(_ROOT), message],
+            ["opencode", "run", "--agent", self._merger_agent, "--model", self._merger_model, "--dir", str(_ROOT), message],
             capture_output=True, text=True, timeout=600,
         )
 

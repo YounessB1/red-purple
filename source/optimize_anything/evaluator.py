@@ -23,6 +23,7 @@ DIAGNOSER_MODEL: str = ""
 REFLECTOR_MODEL: str = ""
 TRAIN_SIZE: int = 0
 GT: bool = False
+DIAGNOSER_GT: bool = False
 AGENT_SERVER_URL: str = "http://localhost:8000"
 LOGGER = None
 
@@ -57,9 +58,10 @@ def configure_runtime(
     reflector_model: str = "",
     train_size: int = 0,
     gt: bool,
+    diagnoser_gt: bool = False,
     logger=None,
 ) -> None:
-    global EXPERIMENT_DIR, AGENT_MAX_ITER, AGENT_MODEL, JUDGE_MODEL, DIAGNOSER_MODEL, REFLECTOR_MODEL, TRAIN_SIZE, GT, LOGGER
+    global EXPERIMENT_DIR, AGENT_MAX_ITER, AGENT_MODEL, JUDGE_MODEL, DIAGNOSER_MODEL, REFLECTOR_MODEL, TRAIN_SIZE, GT, DIAGNOSER_GT, LOGGER
     global _gepa_iteration
 
     EXPERIMENT_DIR = experiment_dir
@@ -70,6 +72,7 @@ def configure_runtime(
     REFLECTOR_MODEL = reflector_model
     TRAIN_SIZE = train_size
     GT = gt
+    DIAGNOSER_GT = diagnoser_gt
     LOGGER = logger
     _gepa_iteration = 0
     _reflection_was_merge = False
@@ -185,7 +188,8 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
             save_run(run_dir, metadata, context_window)
             if DIAGNOSER_MODEL and not metadata["success"] and _get_role() == "parent":
                 diagnosis = diagnose(context_window, metadata, DIAGNOSER_MODEL, LOGGER,
-                                    reflector_model=REFLECTOR_MODEL, train_size=TRAIN_SIZE)
+                                    reflector_model=REFLECTOR_MODEL, train_size=TRAIN_SIZE, gt=DIAGNOSER_GT,
+                                    bench_id=bench_id, out_dir=run_dir)
                 (run_dir / "diagnosis.json").write_text(
                     json.dumps({"diagnosis": diagnosis}, indent=2), encoding="utf-8"
                 )
@@ -204,7 +208,7 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
         if cached_judge and cached_judge.get("model") == JUDGE_MODEL:
             score = float(cached_judge["score"])
         else:
-            score, reason = llm_judge(context_window, bench_id, model=JUDGE_MODEL, logger=LOGGER, gt=GT)
+            score, reason = llm_judge(context_window, bench_id, model=JUDGE_MODEL, logger=LOGGER, gt=GT, out_dir=run_dir)
             (run_dir / "judge_score.json").write_text(
                 json.dumps({"model": JUDGE_MODEL, "score": score, "reason": reason}),
                 encoding="utf-8",

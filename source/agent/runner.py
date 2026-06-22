@@ -1,8 +1,10 @@
 """Agent runner — spawns an OpenCode CTF agent per run."""
 
 import json
+import os
 import re
 import shutil
+import signal
 import sqlite3
 import subprocess
 import tempfile
@@ -222,6 +224,7 @@ def run(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
 
         watcher_stop = threading.Event()
@@ -240,7 +243,10 @@ def run(
         try:
             stdout, _ = proc.communicate(timeout=max_steps * 120)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                proc.kill()
             stdout, _ = proc.communicate()
             timed_out = True
 

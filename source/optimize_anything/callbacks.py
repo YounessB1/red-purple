@@ -7,8 +7,9 @@ from pathlib import Path
 from gepa.core.state import CachedEvaluation, _candidate_hash
 from gepa.gepa_utils import remove_dominated_programs
 
-from source.optimize_anything import evaluator
+from source.optimize_anything import evaluator, candidate_store
 from source.optimize_anything.evaluator import get_reflection_was_merge, get_reflection_merge_parent_b_hash
+from source.optimize_anything.utils import dict_to_folder
 
 
 def _patch_evaluation_cache(state) -> None:
@@ -90,6 +91,7 @@ class TracingCallback:
         valset: list[dict] | None = None,
     ) -> None:
         self._experiment_dir = experiment_dir
+        self._seed_files_hash = (seed_candidate or {}).get("files", "")
         self._train_ids = [ex["benchmark_id"] for ex in (trainset or [])]
         self._val_ids = [ex["benchmark_id"] for ex in (valset or [])]
         self._current_child_instructions: dict | None = None
@@ -154,6 +156,10 @@ class TracingCallback:
             json.dumps(evolution, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         (iter_dir / "ACCEPTED").touch()
+
+        seed_files = candidate_store.load(self._seed_files_hash)
+        if seed_files:
+            dict_to_folder(iter_dir / "parent", seed_files)
 
     # ── Per-iteration evolution snapshot ──────────────────────────────────
 

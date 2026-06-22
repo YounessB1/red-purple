@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import subprocess
 from pathlib import Path
 
 
@@ -44,6 +45,33 @@ def trace_opencode_session(workdir: Path) -> tuple[int, int, float, list]:
         return input_tokens, output_tokens, cost or 0.0, steps
     finally:
         db.close()
+
+
+def run_opencode_agent(
+    agent: str,
+    model: str,
+    workdir: Path,
+    prompt: str,
+    timeout: int = 300,
+    label: str = "",
+) -> tuple[bool, int, int, float, list]:
+    """Run one OpenCode agent call and return its trace.
+
+    Returns (timed_out, input_tokens, output_tokens, cost, steps).
+    timed_out=True means the subprocess hit the timeout; caller handles retry.
+    """
+    lbl = label or agent
+    try:
+        proc = subprocess.run(
+            ["opencode", "run", "--agent", agent, "--model", model, "--dir", str(workdir), prompt],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if proc.returncode != 0 and proc.stderr:
+            print(f"[{lbl}] opencode stderr: {proc.stderr.strip()[:200]}")
+    except subprocess.TimeoutExpired:
+        return True, 0, 0, 0.0, []
+    input_tokens, output_tokens, cost, steps = trace_opencode_session(workdir)
+    return False, input_tokens, output_tokens, cost, steps
 
 
 def last_agent_text(steps: list) -> str:

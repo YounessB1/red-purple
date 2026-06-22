@@ -5,8 +5,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from source.optimize_anything.evaluator import _get_iteration
-from source.tracer.tracer import _compute_cost, _load_prices
-
 
 def _empty_bucket() -> dict:
     return {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
@@ -22,7 +20,6 @@ class Logger:
         self._diagnoser_model = diagnoser_model
         self._log_dir = log_dir
         self._lock = threading.Lock()
-        self._prices = _load_prices()
         self._started_at: datetime | None = None
 
         self._reflector, self._scorer, self._agents, self._diagnoser, self._previous_duration = self._load_existing()
@@ -58,9 +55,7 @@ class Logger:
     def _accumulate(self, bucket: dict, tag: str, model: str,
                     input_tokens: int, output_tokens: int,
                     input_text, output_text: str,
-                    cost: float | None = None) -> None:
-        if cost is None:
-            cost = _compute_cost(model, input_tokens, output_tokens, self._prices)
+                    cost: float = 0.0) -> None:
         with self._lock:
             bucket["calls"]         += 1
             bucket["input_tokens"]  += input_tokens
@@ -94,8 +89,7 @@ class Logger:
                 json.dumps(steps, indent=2, ensure_ascii=False), encoding="utf-8"
             )
 
-    def log_scorer(self, input_tokens: int, output_tokens: int, input_text=None, output_text: str = "") -> None:
-        cost = _compute_cost(self._judge_model, input_tokens, output_tokens, self._prices)
+    def log_scorer(self, input_tokens: int, output_tokens: int, cost: float = 0.0) -> None:
         with self._lock:
             self._scorer["calls"]         += 1
             self._scorer["input_tokens"]  += input_tokens
@@ -114,8 +108,7 @@ class Logger:
             encoding="utf-8",
         )
 
-    def log_diagnoser(self, input_tokens: int, output_tokens: int) -> None:
-        cost = _compute_cost(self._diagnoser_model, input_tokens, output_tokens, self._prices)
+    def log_diagnoser(self, input_tokens: int, output_tokens: int, cost: float = 0.0) -> None:
         with self._lock:
             self._diagnoser["calls"]         += 1
             self._diagnoser["input_tokens"]  += input_tokens

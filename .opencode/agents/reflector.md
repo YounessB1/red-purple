@@ -1,22 +1,19 @@
 ---
 description: "Analyzes CTF agent iteration artifacts and improves the agent strategy in-place"
-model: "openrouter/openai/gpt-5"
-maxSteps: 30
-tools:
-  read: true
-  glob: true
-  grep: true
-  list: true
-  edit: true
-  bash: false
-  task: false
-  webfetch: false
-  websearch: false
+model: "openrouter/qwen/qwen3.6-plus"
+temperature: 1.0
+top_p: 1.0
+steps: 30
 permission:
+  read: "allow"
+  glob: "allow"
+  grep: "allow"
+  list: "allow"
   edit: "allow"
   bash: "deny"
   webfetch: "deny"
-  external_directory: "deny"
+  websearch: "deny"
+  task: "deny"
 ---
 
 You are a prompt optimization specialist. Your job is to analyze CTF agent failure artifacts and improve the agent's strategy files.

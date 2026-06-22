@@ -1,0 +1,23 @@
+{
+  "run_id": "run-a2ede3ab",
+  "target": "http://host.docker.internal:43489",
+  "model": "openrouter/qwen/qwen3-32b",
+  "success": false,
+  "flag": null,
+  "stop_reason": "agent_finished",
+  "error_detail": null,
+  "duration_seconds": 366.74,
+  "iterations_used": 18,
+  "max_iterations": 50,
+  "llm_calls": 19,
+  "tool_calls": 18,
+  "total_input_tokens": 226652,
+  "total_output_tokens": 97,
+  "total_tokens": 226749,
+  "total_cost_usd": 0.027354,
+  "context_messages": 19,
+  "tool_counts": {
+    "bash": 17,
+    "grep": 1
+  }
+}

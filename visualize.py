@@ -6,6 +6,10 @@ Output: <experiment_dir>/viewer.html
 import json
 import sys
 from pathlib import Path
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None
 
 
 _TAG_TO_CATEGORY: dict[str, str] = {
@@ -81,9 +85,10 @@ def load_experiment(exp_dir: Path) -> dict:
             parent_val    = evo.get("parent", {}).get("val")   or {}
             child_train   = evo.get("child",  {}).get("train") or {}
             child_val     = evo.get("child",  {}).get("val")
-            parent_idx    = evo.get("parent", {}).get("candidate_idx")
-            operation     = evo.get("operation")
-            parents       = evo.get("parents", [])
+            parent_idx       = evo.get("parent", {}).get("candidate_idx")
+            child_candidate_idx = evo.get("child", {}).get("candidate_idx")
+            operation        = evo.get("operation")
+            parents          = evo.get("parents", [])
 
         for snap_name, target in [("parent", parent_files), ("child", child_files)]:
             snap_dir = iter_dir / snap_name
@@ -149,9 +154,10 @@ def load_experiment(exp_dir: Path) -> dict:
             "parent_val":       parent_val,
             "child_train":      child_train,
             "child_val":        child_val,
-            "parent_idx":       parent_idx,
-            "operation":        operation,
-            "parents":          parents,
+            "parent_idx":          parent_idx,
+            "child_candidate_idx": child_candidate_idx,
+            "operation":           operation,
+            "parents":             parents,
             "pool_json":        pool_json,
             "reflector_json":   reflector_json,
             "reflector_steps":  reflector_steps,
@@ -159,8 +165,17 @@ def load_experiment(exp_dir: Path) -> dict:
 
     config = {}
     config_path = exp_dir / "config.json"
+    if not config_path.exists():
+        config_path = exp_dir / "config.yaml"
     if config_path.exists():
-        config = json.loads(config_path.read_text(encoding="utf-8"))
+        raw = config_path.read_text(encoding="utf-8")
+        try:
+            config = json.loads(raw)
+        except json.JSONDecodeError:
+            if _yaml is not None:
+                config = _yaml.safe_load(raw) or {}
+            else:
+                config = {}
 
     summary = {}
     summary_path = exp_dir / "experiment_summary.json"
@@ -180,99 +195,104 @@ HTML = r"""<!DOCTYPE html>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #0d1117; color: #c9d1d9;
+  background: #ffffff; color: #24292f;
   height: 100vh; display: flex; flex-direction: column; overflow: hidden;
 }
 #hdr {
-  background: #161b22; border-bottom: 1px solid #30363d;
+  background: #f6f8fa; border-bottom: 1px solid #d0d7de;
   padding: 10px 18px; display: flex; align-items: center; gap: 14px; flex-shrink: 0;
 }
-#hdr h1 { font-size: 15px; font-weight: 600; color: #e6edf3; }
-#hdr .hint { font-size: 12px; color: #6e7681; }
+#hdr h1 { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+#hdr .hint { font-size: 12px; color: #6e7781; }
 #body { display: flex; flex: 1; overflow: hidden; }
 #sidebar {
-  width: 210px; flex-shrink: 0; background: #161b22;
-  border-right: 1px solid #30363d; overflow-y: auto; padding: 8px;
+  width: 210px; flex-shrink: 0; background: #f6f8fa;
+  border-right: 1px solid #d0d7de; overflow-y: auto; padding: 8px;
 }
-#main { flex: 1; overflow-y: auto; padding: 18px 24px; }
+#main { flex: 1; overflow-y: auto; padding: 18px 24px; min-width: 200px; }
+.resizer {
+  width: 4px; flex-shrink: 0; cursor: col-resize;
+  background: #d0d7de; transition: background 0.15s;
+}
+.resizer:hover, .resizer.dragging { background: #0969da; }
 #info-sidebar {
-  width: 310px; flex-shrink: 0; background: #161b22;
-  border-left: 1px solid #30363d; overflow-y: auto; padding: 12px;
+  width: 310px; flex-shrink: 0; background: #f6f8fa;
+  border-left: 1px solid #d0d7de; overflow-y: auto; padding: 12px;
 }
 .info-panel {
-  background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+  background: #ffffff; border: 1px solid #d0d7de; border-radius: 6px;
   margin-bottom: 12px; overflow: hidden;
 }
 .info-panel-hdr {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
-  color: #6e7681; padding: 7px 12px; background: #1c2128;
-  border-bottom: 1px solid #30363d;
+  color: #57606a; padding: 7px 12px; background: #eaeef2;
+  border-bottom: 1px solid #d0d7de;
 }
 .info-row {
   display: flex; justify-content: space-between; align-items: baseline;
-  gap: 8px; padding: 5px 12px; border-bottom: 1px solid #161b22;
+  gap: 8px; padding: 5px 12px; border-bottom: 1px solid #f6f8fa;
   font-size: 12.5px;
 }
 .info-row:last-child { border-bottom: none; }
-.info-key { color: #6e7681; white-space: nowrap; flex-shrink: 0; }
-.info-val { color: #c9d1d9; text-align: right; word-break: break-all; }
+.info-key { color: #57606a; white-space: nowrap; flex-shrink: 0; }
+.info-val { color: #24292f; text-align: right; word-break: break-all; }
 .info-val.mono { font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11.5px; }
 .info-sub-hdr {
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-  color: #484f58; padding: 6px 12px 3px; background: #0d1117;
+  color: #9198a1; padding: 6px 12px 3px; background: #ffffff;
 }
-.info-cost { color: #d29922; }
-.info-calls { color: #79c0ff; }
+.info-cost { color: #9a6700; }
+.info-calls { color: #0969da; }
 .card {
-  border: 1px solid #30363d; border-radius: 7px; padding: 9px 11px;
+  border: 1px solid #d0d7de; border-radius: 7px; padding: 9px 11px;
   margin-bottom: 5px; cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
 }
-.card:hover { border-color: #58a6ff; background: #1c2128; }
-.card.sel   { border-color: #1f6feb; background: #1c2128; box-shadow: 0 0 0 2px #1f6feb55; }
+.card:hover { border-color: #0969da; background: #f6f8fa; }
+.card.sel   { border-color: #0969da; background: #ddf4ff; box-shadow: 0 0 0 2px #0969da33; }
 .card-top   { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
-.card-num   { font-size: 12px; font-weight: 600; color: #e6edf3; }
+.card-num   { font-size: 12px; font-weight: 600; color: #1a1a1a; }
 .badge {
   font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 9px;
   letter-spacing: 0.4px; text-transform: uppercase;
 }
-.b-accepted { background: #1a4228; color: #3fb950; border: 1px solid #238636; }
-.b-rejected { background: #3d1a1a; color: #f85149; border: 1px solid #da3633; }
-.b-pending  { background: #2d2516; color: #d29922; border: 1px solid #9e6a03; }
-.card-score { font-size: 10px; color: #6e7681; }
+.b-accepted { background: #dafbe1; color: #1a7f37; border: 1px solid #2da44e; }
+.b-rejected { background: #ffebe9; color: #cf222e; border: 1px solid #ff8182; }
+.b-pending  { background: #fff8c5; color: #9a6700; border: 1px solid #d4a72c; }
+.card-score { font-size: 10px; color: #57606a; }
 #placeholder {
   height: 100%; display: flex; align-items: center; justify-content: center;
-  color: #3d444d; font-size: 14px;
+  color: #9198a1; font-size: 14px;
 }
 .section-title {
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px;
-  color: #6e7681; margin-bottom: 8px; margin-top: 22px;
+  color: #57606a; margin-bottom: 8px; margin-top: 22px;
 }
 .section-title:first-child { margin-top: 0; }
 
 /* ── Tab bar ── */
 .tab-bar {
   display: flex; gap: 0; margin-bottom: 20px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid #d0d7de;
 }
 .tab {
   background: none; border: none; border-bottom: 2px solid transparent;
-  color: #8b949e; font-size: 13px; font-family: inherit;
+  color: #57606a; font-size: 13px; font-family: inherit;
   padding: 7px 18px; cursor: pointer; margin-bottom: -1px;
   transition: color 0.1s;
 }
-.tab:hover { color: #c9d1d9; }
-.tab.sel { color: #e6edf3; border-bottom-color: #f78166; font-weight: 600; }
+.tab:hover { color: #24292f; }
+.tab.sel { color: #1a1a1a; border-bottom-color: #f06633; font-weight: 600; }
 .json-view {
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px;
   padding: 16px; font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-  font-size: 12px; line-height: 1.65; color: #c9d1d9;
+  font-size: 12px; line-height: 1.65; color: #24292f;
   white-space: pre-wrap; word-break: break-word;
 }
 
 .parent-tag {
-  display: inline-block; font-size: 11px; color: #79c0ff;
-  background: #1b2333; border: 1px solid #1f6feb;
+  display: inline-block; font-size: 11px; color: #0969da;
+  background: #ddf4ff; border: 1px solid #54aeff;
   border-radius: 4px; padding: 2px 9px;
   font-family: 'JetBrains Mono', Consolas, monospace;
 }
@@ -281,154 +301,154 @@ body {
   font-size: 10px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
   padding: 2px 8px; border-radius: 4px;
 }
-.op-tweak { background: #1c2a1c; color: #56d364; border: 1px solid #238636; }
-.op-merge { background: #2d1f3d; color: #d2a8ff; border: 1px solid #8957e5; }
-.op-seed  { background: #1b2333; color: #79c0ff; border: 1px solid #1f6feb; }
+.op-tweak { background: #dafbe1; color: #1a7f37; border: 1px solid #2da44e; }
+.op-merge { background: #fbefff; color: #8250df; border: 1px solid #bf8cf2; }
+.op-seed  { background: #ddf4ff; color: #0969da; border: 1px solid #54aeff; }
 
 /* ── Scores table ── */
 .scores-wrap { display: flex; gap: 16px; margin-bottom: 0; }
 .scores-panel {
-  flex: 1; background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  flex: 1; background: #ffffff; border: 1px solid #d0d7de; border-radius: 6px;
   overflow: hidden; min-width: 0;
 }
 .scores-panel-hdr {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 12px; background: #1c2128; border-bottom: 1px solid #30363d;
+  padding: 6px 12px; background: #eaeef2; border-bottom: 1px solid #d0d7de;
   font-size: 11px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.5px; color: #8b949e;
+  letter-spacing: 0.5px; color: #57606a;
 }
-.scores-panel-hdr .s-summary { font-size: 10px; font-weight: 400; color: #6e7681; }
+.scores-panel-hdr .s-summary { font-size: 10px; font-weight: 400; color: #6e7781; }
 .scores-tbl { width: 100%; border-collapse: collapse; }
 .scores-tbl th {
   font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
-  color: #6e7681; padding: 4px 10px; text-align: center; border-bottom: 1px solid #21262d;
+  color: #6e7781; padding: 4px 10px; text-align: center; border-bottom: 1px solid #d0d7de;
 }
 .scores-tbl th.bench-col { text-align: left; }
 .scores-tbl td {
   padding: 3px 10px; font-size: 11.5px;
-  font-family: 'JetBrains Mono', Consolas, monospace; border-bottom: 1px solid #161b22;
+  font-family: 'JetBrains Mono', Consolas, monospace; border-bottom: 1px solid #f6f8fa;
 }
 .scores-tbl tr:last-child td { border-bottom: none; }
-.scores-tbl td.bench-name { color: #8b949e; }
+.scores-tbl td.bench-name { color: #57606a; }
 .bench-cat {
-  font-size: 10px; color: #6e7681; font-family: inherit;
-  background: #1c2128; border: 1px solid #30363d;
+  font-size: 10px; color: #6e7781; font-family: inherit;
+  background: #eaeef2; border: 1px solid #d0d7de;
   border-radius: 3px; padding: 1px 5px; margin-left: 7px;
   font-weight: 500; letter-spacing: 0.2px; vertical-align: middle;
 }
-.s-pass  { color: #3fb950; text-align: center; font-weight: 700; }
-.s-mid   { color: #d29922; text-align: center; }
-.s-fail  { color: #f85149; text-align: center; }
-.s-none  { color: #3d444d; text-align: center; }
-.s-delta-pos { color: #3fb950; text-align: center; font-weight: 700; font-size: 13px; }
-.s-delta-neg { color: #f85149; text-align: center; font-size: 13px; }
-.s-delta-eq  { color: #3d444d; text-align: center; }
+.s-pass  { color: #1a7f37; text-align: center; font-weight: 700; }
+.s-mid   { color: #9a6700; text-align: center; }
+.s-fail  { color: #cf222e; text-align: center; }
+.s-none  { color: #9198a1; text-align: center; }
+.s-delta-pos { color: #1a7f37; text-align: center; font-weight: 700; font-size: 13px; }
+.s-delta-neg { color: #cf222e; text-align: center; font-size: 13px; }
+.s-delta-eq  { color: #9198a1; text-align: center; }
 
 /* ── Reflector changes ── */
 .changes-box {
-  background: #161b22; border: 1px solid #30363d; border-left: 3px solid #d29922;
+  background: #ffffff; border: 1px solid #d0d7de; border-left: 3px solid #9a6700;
   border-radius: 6px; padding: 14px 16px;
-  font-size: 13px; line-height: 1.7; color: #c9d1d9;
+  font-size: 13px; line-height: 1.7; color: #24292f;
 }
 .changes-box ul { list-style: none; padding: 0; }
 .changes-box li {
   padding: 5px 0 5px 16px; position: relative;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid #eaeef2;
 }
 .changes-box li:last-child { border-bottom: none; }
-.changes-box li::before { content: '•'; position: absolute; left: 0; color: #d29922; }
+.changes-box li::before { content: '•'; position: absolute; left: 0; color: #9a6700; }
 
 /* ── Pool view ── */
-.pool-header { font-size: 11px; color: #6e7681; margin-bottom: 14px; }
+.pool-header { font-size: 11px; color: #57606a; margin-bottom: 14px; }
 .pool-wrap   { display: flex; flex-wrap: wrap; gap: 14px; }
 .pool-card   {
-  background: #161b22; border: 1px solid #30363d; border-radius: 7px;
+  background: #ffffff; border: 1px solid #d0d7de; border-radius: 7px;
   overflow: hidden; flex: 1; min-width: 260px;
 }
 .pool-card-hdr {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 14px; background: #1c2128; border-bottom: 1px solid #30363d;
+  padding: 8px 14px; background: #eaeef2; border-bottom: 1px solid #d0d7de;
 }
-.pool-card-title { font-size: 12px; font-weight: 600; color: #e6edf3; }
+.pool-card-title { font-size: 12px; font-weight: 600; color: #1a1a1a; }
 .pool-avg   { font-size: 22px; font-weight: 700; font-family: 'JetBrains Mono', Consolas, monospace; }
-.pool-avg.g { color: #3fb950; } .pool-avg.y { color: #d29922; } .pool-avg.r { color: #f85149; }
+.pool-avg.g { color: #1a7f37; } .pool-avg.y { color: #9a6700; } .pool-avg.r { color: #cf222e; }
 .pool-card-body { padding: 10px 14px; }
 .pool-row {
   display: flex; align-items: baseline; gap: 8px;
-  font-size: 11.5px; padding: 3px 0; border-bottom: 1px solid #21262d;
+  font-size: 11.5px; padding: 3px 0; border-bottom: 1px solid #eaeef2;
 }
 .pool-row:last-child { border-bottom: none; }
-.pool-lbl  { color: #6e7681; min-width: 56px; flex-shrink: 0; }
-.pool-mval { color: #c9d1d9; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11px; }
+.pool-lbl  { color: #57606a; min-width: 56px; flex-shrink: 0; }
+.pool-mval { color: #24292f; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 11px; }
 .pool-slbl {
   font-size: 10px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.4px; color: #484f58; padding: 8px 0 4px;
+  letter-spacing: 0.4px; color: #9198a1; padding: 8px 0 4px;
 }
 .pool-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
 .pool-chip  {
   font-family: 'JetBrains Mono', Consolas, monospace;
   font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 600;
 }
-.pc-pass { background: #122416; color: #3fb950; border: 1px solid #238636; }
-.pc-mid  { background: #2d2516; color: #d29922; border: 1px solid #9e6a03; }
-.pc-fail { background: #2d1515; color: #f85149; border: 1px solid #6e1a1a; }
-.pc-none { background: #1c2128; color: #484f58; border: 1px solid #30363d; }
+.pc-pass { background: #dafbe1; color: #1a7f37; border: 1px solid #2da44e; }
+.pc-mid  { background: #fff8c5; color: #9a6700; border: 1px solid #d4a72c; }
+.pc-fail { background: #ffebe9; color: #cf222e; border: 1px solid #ff8182; }
+.pc-none { background: #f6f8fa; color: #57606a; border: 1px solid #d0d7de; }
 
 /* ── Reflector view ── */
 .refl-block {
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  background: #ffffff; border: 1px solid #d0d7de; border-radius: 6px;
   margin-bottom: 14px; overflow: hidden;
 }
 .refl-block-hdr {
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-  color: #6e7681; padding: 5px 14px; background: #1c2128;
-  border-bottom: 1px solid #30363d;
+  color: #57606a; padding: 5px 14px; background: #eaeef2;
+  border-bottom: 1px solid #d0d7de;
 }
 .refl-body {
   padding: 12px 14px;
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-  font-size: 12px; line-height: 1.65; color: #c9d1d9;
+  font-size: 12px; line-height: 1.65; color: #24292f;
   white-space: pre-wrap; word-break: break-word;
   max-height: 420px; overflow-y: auto;
 }
-.rh  { color: #79c0ff; font-weight: 700; }
-.rf  { color: #3d444d; }
+.rh  { color: #0969da; font-weight: 700; }
+.rf  { color: #9198a1; }
 
 /* ── Unified diff ── */
 .diff-meta {
   display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 12px;
 }
-.diff-meta .stat-del { color: #f85149; }
-.diff-meta .stat-ins { color: #3fb950; }
+.diff-meta .stat-del { color: #cf222e; }
+.diff-meta .stat-ins { color: #1a7f37; }
 .unified-diff {
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   font-size: 12.5px; line-height: 1.65;
-  background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+  background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px;
   overflow: hidden;
 }
 .u-hunk {
-  background: #1b2333; color: #79c0ff;
+  background: #ddf4ff; color: #0969da;
   padding: 2px 14px; font-size: 11px;
-  border-top: 1px solid #21262d; border-bottom: 1px solid #21262d;
+  border-top: 1px solid #d0d7de; border-bottom: 1px solid #d0d7de;
 }
 .u-hunk:first-child { border-top: none; }
-.u-del  { background: #2d1515; color: #ffa198; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
-.u-ins  { background: #122416; color: #7ee787; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
-.u-ctx  { background: #0d1117; color: #8b949e;  padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+.u-del  { background: #ffebe9; color: #cf222e; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+.u-ins  { background: #dafbe1; color: #1a7f37; padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
+.u-ctx  { background: #ffffff; color: #57606a;  padding: 0 14px; white-space: pre-wrap; word-break: break-word; }
 .u-sign { display: inline-block; width: 14px; font-weight: 700; color: inherit; user-select: none; }
 .no-diff {
-  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-  padding: 14px 16px; font-size: 13px; color: #484f58; font-style: italic;
+  background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px;
+  padding: 14px 16px; font-size: 13px; color: #9198a1; font-style: italic;
 }
 
 /* ── Files overview ── */
 .files-overview {
-  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  background: #ffffff; border: 1px solid #d0d7de; border-radius: 6px;
   padding: 10px 14px; margin-bottom: 16px;
 }
 .file-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 3px 0; border-bottom: 1px solid #1c2128;
+  padding: 3px 0; border-bottom: 1px solid #f6f8fa;
   font-size: 12px; font-family: 'JetBrains Mono', Consolas, monospace;
 }
 .file-row:last-child { border-bottom: none; }
@@ -437,45 +457,70 @@ body {
   letter-spacing: 0.4px; text-transform: uppercase; white-space: nowrap;
   min-width: 68px; text-align: center;
 }
-.fb-modified  { background: #2d2516; color: #d29922; border: 1px solid #9e6a03; }
-.fb-added     { background: #122416; color: #3fb950; border: 1px solid #238636; }
-.fb-removed   { background: #2d1515; color: #f85149; border: 1px solid #6e1a1a; }
-.fb-unchanged { background: #1c2128; color: #484f58; border: 1px solid #30363d; }
-.file-name { color: #8b949e; }
-.file-summary { font-size: 11.5px; color: #6e7681; margin-left: auto; font-style: italic; }
+.fb-modified  { background: #fff8c5; color: #9a6700; border: 1px solid #d4a72c; }
+.fb-added     { background: #dafbe1; color: #1a7f37; border: 1px solid #2da44e; }
+.fb-removed   { background: #ffebe9; color: #cf222e; border: 1px solid #ff8182; }
+.fb-unchanged { background: #f6f8fa; color: #57606a; border: 1px solid #d0d7de; }
+.file-name { color: #57606a; }
+.file-summary { font-size: 11.5px; color: #6e7781; margin-left: auto; font-style: italic; }
 
 /* ── Reasoning steps ── */
 .rsn-feed { display: flex; flex-direction: column; gap: 6px; }
-.rsn-step { border-radius: 6px; overflow: hidden; background: #161b22; }
+.rsn-step { border-radius: 6px; overflow: hidden; background: #ffffff; }
 .rsn-label {
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
   padding: 4px 12px;
 }
 .rsn-body {
-  padding: 9px 14px; font-size: 12.5px; line-height: 1.7; color: #c9d1d9;
-  white-space: pre-wrap; word-break: break-word; background: #161b22;
+  padding: 9px 14px; font-size: 12.5px; line-height: 1.7; color: #24292f;
+  white-space: pre-wrap; word-break: break-word; background: #ffffff;
 }
 
-/* thinking — light blue */
-.rsn-step-thinking { border: 1px solid #58a6ff; }
-.rsn-step-thinking .rsn-label { color: #58a6ff; border-bottom: 1px solid #58a6ff; }
-.rsn-step-thinking .rsn-body strong { color: #79c0ff; }
+/* thinking — blue */
+.rsn-step-thinking { border: 1px solid #0969da; }
+.rsn-step-thinking .rsn-label { color: #0969da; border-bottom: 1px solid #0969da; }
+.rsn-step-thinking .rsn-body strong { color: #0969da; }
 
 /* text — green */
-.rsn-step-text { border: 1px solid #3fb950; }
-.rsn-step-text .rsn-label { color: #3fb950; border-bottom: 1px solid #3fb950; }
+.rsn-step-text { border: 1px solid #2da44e; }
+.rsn-step-text .rsn-label { color: #1a7f37; border-bottom: 1px solid #2da44e; }
 
-/* tool — orange */
-.rsn-step-tool { border: 1px solid #d29922; }
-.rsn-step-tool .rsn-label { color: #d29922; border-bottom: 1px solid #d29922; }
+/* tool — amber */
+.rsn-step-tool { border: 1px solid #d4a72c; }
+.rsn-step-tool .rsn-label { color: #9a6700; border-bottom: 1px solid #d4a72c; }
 .rsn-step-tool .rsn-body  {
   font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px;
 }
-.rsn-tool-name { color: #d29922; font-weight: 700; margin-right: 10px; }
+.rsn-tool-name { color: #9a6700; font-weight: 700; margin-right: 10px; }
 .rsn-params { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
 .rsn-param-row { display: flex; gap: 8px; font-size: 11.5px; }
-.rsn-param-key { color: #6e7681; flex-shrink: 0; }
-.rsn-param-val { color: #c9d1d9; word-break: break-all; }
+.rsn-param-key { color: #57606a; flex-shrink: 0; }
+.rsn-param-val { color: #24292f; word-break: break-all; }
+
+/* ── Evolution view ── */
+#evo-tree-wrap { position: relative; overflow-x: auto; padding: 24px; }
+#evo-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.evo-levels { display: flex; flex-direction: column; gap: 56px; align-items: center; }
+.evo-level  { display: flex; gap: 32px; align-items: flex-start; justify-content: center; }
+.evo-candidate {
+  border: 1px solid #d0d7de; border-radius: 8px;
+  padding: 12px 16px; background: #fff;
+}
+.evo-candidate-hdr { font-size: 12px; font-weight: 700; color: #1a1a1a; margin-bottom: 10px; }
+.evo-candidate-sub { font-size: 10px; color: #57606a; font-weight: 400; margin-left: 6px; }
+.evo-files { display: flex; flex-direction: column; gap: 5px; }
+.evo-file-block {
+  height: 32px; border-radius: 5px; border: 1px solid;
+  display: inline-flex; align-items: center; padding: 0 8px;
+  font-size: 10px; font-family: 'JetBrains Mono', Consolas, monospace;
+  white-space: nowrap; cursor: default;
+}
+.evo-val-badge {
+  display: inline-block; margin-left: 10px; padding: 2px 8px;
+  border-radius: 10px; font-size: 11px; font-weight: 600;
+  background: #ddf4ff; color: #0550ae; border: 1px solid #80ccff;
+  vertical-align: middle;
+}
 </style>
 </head>
 <body>
@@ -485,10 +530,12 @@ body {
 </div>
 <div id="body">
   <div id="sidebar"></div>
+  <div class="resizer" id="resizer-left"></div>
   <div id="main">
     <div id="placeholder">← Select an iteration</div>
     <div id="content" style="display:none"></div>
   </div>
+  <div class="resizer" id="resizer-right"></div>
   <div id="info-sidebar"></div>
 </div>
 <script>
@@ -555,6 +602,11 @@ function renderInfoSidebar() {
 function renderSidebar() {
   const sb = document.getElementById('sidebar');
   sb.innerHTML = '';
+  const evoCard = document.createElement('div');
+  evoCard.className = 'card' + (selId === 'evolution' ? ' sel' : '');
+  evoCard.innerHTML = `<div class="card-top"><span class="card-num">Evolution</span></div>`;
+  evoCard.addEventListener('click', () => { selId = 'evolution'; renderSidebar(); renderMain(); });
+  sb.appendChild(evoCard);
   DATA.iterations.forEach(it => {
     const card = document.createElement('div');
     card.className = 'card' + (selId === it.id ? ' sel' : '');
@@ -574,7 +626,190 @@ function renderMain() {
   const ct = document.getElementById('content');
   if (selId === null) { ph.style.display = 'flex'; ct.style.display = 'none'; return; }
   ph.style.display = 'none'; ct.style.display = 'block';
+  if (selId === 'evolution') { renderEvolutionView(ct); return; }
   renderIteration(ct, DATA.iterations.find(x => x.id === selId));
+}
+
+// ── Evolution view ────────────────────────────────────────────────────────
+function fileColor(f) {
+  if (f.startsWith('skills/')) return { bg: '#fff8c5', border: '#d4a72c', text: '#9a6700' };
+  return { bg: '#ffebe9', border: '#cf222e', text: '#cf222e' };
+}
+
+function fileDisplayName(f) {
+  if (f.startsWith('skills/')) {
+    const parts = f.split('/');
+    return parts.length >= 2 ? parts[1] : f;
+  }
+  return f.split('/').pop();
+}
+
+function buildEvolutionTree() {
+  const nodes    = {};  // candidateIdx → { idx, iter, files }
+  const parentOf = {};  // childIdx → parentIdx
+  const children = {};  // parentIdx → [childIdx, ...]
+
+  // Seed node (candidate 0)
+  const seedIter = DATA.iterations[0];
+  nodes[0] = { idx: 0, iter: 0, files: seedIter?.parent_files || {}, val_avg: null };
+
+  for (const it of DATA.iterations) {
+    if (it.status !== 'accepted') continue;
+    if (!it.child_files || !Object.keys(it.child_files).length) continue;
+    const newIdx = it.child_candidate_idx;
+    if (newIdx === null || newIdx === undefined || newIdx === 0) continue;
+
+    nodes[newIdx] = { idx: newIdx, iter: it.id, files: it.child_files, val_avg: null };
+    if (it.parent_idx !== null && it.parent_idx !== undefined) {
+      parentOf[newIdx] = it.parent_idx;
+      if (!children[it.parent_idx]) children[it.parent_idx] = [];
+      children[it.parent_idx].push(newIdx);
+    }
+  }
+
+  // Fill val_avg from pool.json (for candidates that appear there)
+  for (const it of DATA.iterations) {
+    if (!it.pool_json) continue;
+    const pool = JSON.parse(it.pool_json);
+    for (const c of pool.candidates) {
+      if (nodes[c.idx] && c.val_avg != null) nodes[c.idx].val_avg = c.val_avg;
+    }
+  }
+  // Fill val_avg from child_val in evolution.json (for candidates absent from pool)
+  for (const it of DATA.iterations) {
+    if (it.status !== 'accepted') continue;
+    const idx = it.child_candidate_idx;
+    if (idx == null || !nodes[idx] || nodes[idx].val_avg != null) continue;
+    const vals = it.child_val ? Object.values(it.child_val).filter(v => v != null) : [];
+    if (vals.length) nodes[idx].val_avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+  // Seed val_avg from first iteration's parent_val
+  if (nodes[0] && nodes[0].val_avg == null) {
+    const it0 = DATA.iterations[0];
+    const vals = it0?.parent_val ? Object.values(it0.parent_val).filter(v => v != null) : [];
+    if (vals.length) nodes[0].val_avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+
+  return { nodes, parentOf, children };
+}
+
+function evoNodeHtml(idx, node) {
+  const label = idx === 0 ? 'Seed' : `Cand #${idx}`;
+  const sub   = node.iter > 0 ? `iter ${pad(node.iter)}` : '';
+  const valBadge = node.val_avg != null
+    ? `<span class="evo-val-badge">val avg ${node.val_avg.toFixed(2)}</span>`
+    : '';
+  const blocks = Object.keys(node.files).filter(f => !f.includes('ctf-agent.md')).sort().map(f => {
+    const lines    = (node.files[f] || '').split('\n').length;
+    const name     = fileDisplayName(f);
+    const col      = fileColor(f);
+    const isSkill  = f.startsWith('skills/');
+    const radius   = isSkill ? '14px' : '5px';
+    const extraPad = Math.min(60, Math.max(0, lines * 3 - 8));
+    return `<div class="evo-file-block"
+      style="border-radius:${radius};padding-right:${8 + extraPad}px;background:${col.bg};border-color:${col.border};color:${col.text}"
+      title="${esc(f)} — ${lines} lines">${esc(name)}</div>`;
+  }).join('');
+  const clickAction = node.iter > 0
+    ? `style="cursor:pointer;" onclick="selId=${JSON.stringify(node.iter)};renderSidebar();renderMain();"`
+    : '';
+  return `<div class="evo-candidate" data-evo-idx="${idx}" ${clickAction}>
+    <div class="evo-candidate-hdr">${esc(label)}<span class="evo-candidate-sub">${esc(sub)}</span>${valBadge}</div>
+    <div class="evo-files">${blocks}</div>
+  </div>`;
+}
+
+function renderEvolutionView(el) {
+  const { nodes, parentOf, children } = buildEvolutionTree();
+  if (!Object.keys(nodes).length) {
+    el.innerHTML = '<div class="no-diff">No candidates found.</div>';
+    return;
+  }
+
+  // Compute horizontal offsets: spread each parent's children left/right of parent
+  const xOffset = {};  // idx → x offset in px relative to center
+  xOffset[0] = 0;
+  const SPREAD = 240;
+  const bfsQueue = [0];
+  while (bfsQueue.length) {
+    const pIdx   = bfsQueue.shift();
+    const childs = children[pIdx] || [];
+    const n      = childs.length;
+    childs.forEach((cIdx, i) => {
+      xOffset[cIdx] = xOffset[pIdx] + (i - (n - 1) / 2) * SPREAD;
+      bfsQueue.push(cIdx);
+    });
+  }
+
+  const STEP = 270;  // fixed vertical distance per candidate level
+  let containerH = 0;
+  let nodesHtml  = '';
+  for (const [idxStr, node] of Object.entries(nodes)) {
+    const idx = parseInt(idxStr);
+    const top = idx * STEP;          // idx == acceptance order → fixed spacing
+    const x   = xOffset[idx] ?? 0;
+    containerH = Math.max(containerH, top + 220);
+    nodesHtml += `<div style="position:absolute;top:${top}px;left:50%;transform:translateX(calc(-50% + ${x}px));">
+      ${evoNodeHtml(idx, node)}
+    </div>`;
+  }
+
+  el.innerHTML = `<div id="evo-tree-wrap" style="position:relative;min-height:${containerH}px;overflow:auto;padding:16px 0;">
+    <svg id="evo-svg" style="position:absolute;top:0;left:0;pointer-events:none;"></svg>
+    ${nodesHtml}
+  </div>`;
+
+  requestAnimationFrame(() => {
+    const wrap = document.getElementById('evo-tree-wrap');
+    const svg  = document.getElementById('evo-svg');
+    if (!wrap || !svg) return;
+    const W = wrap.scrollWidth;
+    const H = wrap.scrollHeight;
+    svg.style.width  = W + 'px';
+    svg.style.height = H + 'px';
+    const wRect = wrap.getBoundingClientRect();
+
+    // Collect edge data
+    const edgeData = [];
+    for (const [childStr, parentIdx] of Object.entries(parentOf)) {
+      const childIdx = parseInt(childStr);
+      const pEl = wrap.querySelector(`[data-evo-idx="${parentIdx}"]`);
+      const cEl = wrap.querySelector(`[data-evo-idx="${childIdx}"]`);
+      if (!pEl || !cEl) continue;
+      const pr = pEl.getBoundingClientRect();
+      const cr = cEl.getBoundingClientRect();
+      const x1 = pr.left + pr.width  / 2 - wRect.left + wrap.scrollLeft;
+      const y1 = pr.bottom - wRect.top + wrap.scrollTop;
+      const x2 = cr.left + cr.width  / 2 - wRect.left + wrap.scrollLeft;
+      const y2 = cr.top   - wRect.top + wrap.scrollTop;
+      edgeData.push({ x1, y1, x2, y2 });
+    }
+
+    // Dashed lines between every consecutive candidate (sorted by vertical position)
+    const candEls = [...wrap.querySelectorAll('[data-evo-idx]')];
+    const candBands = candEls.map(el => {
+      const r = el.getBoundingClientRect();
+      return { idx: parseInt(el.dataset.evoIdx),
+               bottom: r.bottom - wRect.top + wrap.scrollTop,
+               top:    r.top    - wRect.top + wrap.scrollTop };
+    }).sort((a, b) => a.top - b.top);
+    let lines = '';
+    for (let i = 0; i < candBands.length - 1; i++) {
+      const y = (candBands[i].bottom + candBands[i + 1].top) / 2;
+      lines += `<line x1="0" y1="${y}" x2="${W}" y2="${y}"
+        stroke="#d0d7de" stroke-width="1" stroke-dasharray="4 6"/>`;
+    }
+
+    // Bezier edges
+    let paths = '';
+    for (const { x1, y1, x2, y2 } of edgeData) {
+      const mid = (y1 + y2) / 2;
+      paths += `<path d="M${x1},${y1} C${x1},${mid} ${x2},${mid} ${x2},${y2}"
+        fill="none" stroke="#b0b7be" stroke-width="3"/>`;
+    }
+
+    svg.innerHTML = lines + paths;
+  });
 }
 
 function renderScores(it) {
@@ -972,6 +1207,38 @@ function pad(n) { return String(n).padStart(3, '0'); }
 function esc(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+(function() {
+  function makeResizer(resizerId, targetId, side) {
+    const resizer = document.getElementById(resizerId);
+    const target  = document.getElementById(targetId);
+    let startX, startW;
+    resizer.addEventListener('mousedown', e => {
+      startX = e.clientX;
+      startW = target.getBoundingClientRect().width;
+      resizer.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      function onMove(e) {
+        const dx  = e.clientX - startX;
+        const newW = side === 'left' ? startW + dx : startW - dx;
+        if (newW >= 80 && newW <= 700) target.style.width = newW + 'px';
+      }
+      function onUp() {
+        resizer.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+  }
+  makeResizer('resizer-left',  'sidebar',      'left');
+  makeResizer('resizer-right', 'info-sidebar', 'right');
+})();
 
 renderInfoSidebar();
 renderSidebar();
