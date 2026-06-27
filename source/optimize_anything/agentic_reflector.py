@@ -14,7 +14,7 @@ from source.optimize_anything.evaluator import (
     set_reflection_merge_parent_b_hash,
 )
 from source.optimize_anything.lr_scheduler import LRScheduler
-from source.optimize_anything.opencode_trace import trace_opencode_session
+from source.optimize_anything.opencode_trace import trace_opencode_session, OPENCODE_BIN
 from source.optimize_anything.patch_applier import apply_patches
 from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict, get_candidates_pool, log
 
@@ -119,7 +119,7 @@ class AgenticReflector:
         log(f"\n[agentic-reflector] Starting OpenCode for iteration {_get_iteration()}…")
 
         proc = subprocess.run(
-            ["opencode", "run", "--agent", self._reflector_agent, "--model", self._model, "--dir", str(_ROOT), message],
+            [OPENCODE_BIN, "run", "--agent", self._reflector_agent, "--model", self._model, "--dir", str(_ROOT), message],
             capture_output=True, text=True, timeout=600,
         )
 
@@ -176,7 +176,7 @@ class AgenticReflector:
         log(f"\n[agentic-reflector] MERGE — {hash_a[:10]}… + {hash_b[:10]}…")
 
         proc = subprocess.run(
-            ["opencode", "run", "--agent", self._merger_agent, "--model", self._merger_model, "--dir", str(_ROOT), message],
+            [OPENCODE_BIN, "run", "--agent", self._merger_agent, "--model", self._merger_model, "--dir", str(_ROOT), message],
             capture_output=True, text=True, timeout=600,
         )
 

@@ -14,6 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_LOCAL_BIN = _REPO_ROOT / "node_modules" / ".bin" / "opencode"
+_OPENCODE_BIN: str = str(_LOCAL_BIN) if _LOCAL_BIN.exists() else (shutil.which("opencode") or "opencode")
+
 
 def _materialize_files(workdir: Path, files: dict) -> None:
     for rel_path, content in files.items():
@@ -216,7 +220,7 @@ def run(
 
         proc = subprocess.Popen(
             [
-                "opencode", "run",
+                _OPENCODE_BIN, "run",
                 "--agent", "ctf-agent",
                 "--dir", str(workdir),
                 f"The target is at {target}. Find and report the flag.",

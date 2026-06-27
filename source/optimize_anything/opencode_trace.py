@@ -1,9 +1,17 @@
 """Shared utility — query OpenCode's SQLite DB for session metrics."""
 
 import json
+import shutil
 import sqlite3
 import subprocess
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_LOCAL_BIN = _REPO_ROOT / "node_modules" / ".bin" / "opencode"
+
+# Prefer the pinned local binary (installed via `npm install`) over whatever
+# is on PATH, so the project always runs against the declared opencode version.
+OPENCODE_BIN: str = str(_LOCAL_BIN) if _LOCAL_BIN.exists() else (shutil.which("opencode") or "opencode")
 
 
 def trace_opencode_session(workdir: Path) -> tuple[int, int, float, list]:
@@ -63,7 +71,7 @@ def run_opencode_agent(
     lbl = label or agent
     try:
         proc = subprocess.run(
-            ["opencode", "run", "--agent", agent, "--model", model, "--dir", str(workdir), prompt],
+            [OPENCODE_BIN, "run", "--agent", agent, "--model", model, "--dir", str(workdir), prompt],
             capture_output=True, text=True, timeout=timeout,
         )
         if proc.returncode != 0 and proc.stderr:
