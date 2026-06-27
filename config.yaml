@@ -1,6 +1,6 @@
 # ── Experiment ──────────────────────────────────────────────────────────
 experiments_dir: experiments
-experiment_name: PoC_generalization_qwen3-Coder
+experiment_name: PoC_generalization_Qwen32B_test
 splits: PoC_generalization
 max_calls: 90
 workers: 3
@@ -9,8 +9,7 @@ workers: 3
 ctf_agent:
   # .md  → source/seed/.opencode/agents/ctf-agent.md
   md:
-    model: openrouter/qwen/qwen3-coder-30b-a3b-instruct
-    temperature: 0.0
+    model: openrouter/qwen/qwen3-32b
     maxSteps: 50
   # runtime
   server_url: http://localhost:8000
@@ -19,7 +18,7 @@ ctf_agent:
 scorer:
   # .md  → .opencode/agents/scorer.md
   md:
-    model: openrouter/openai/gpt-5-mini
+    model: openrouter/qwen/qwen3.7-plus
     temperature: 0.1
   # runtime
   gt: true
@@ -28,7 +27,7 @@ scorer:
 diagnoser:
   # .md  → .opencode/agents/diagnoser.md
   md:
-    model: openrouter/qwen/qwen3.6-plus
+    model: openrouter/qwen/qwen3.7-plus
     temperature: 0.2
     max_tokens: 4000
   # runtime
@@ -38,7 +37,7 @@ diagnoser:
 reflector:
   # .md  → .opencode/agents/<agent>
   md:
-    model: openrouter/qwen/qwen3.6-plus
+    model: openrouter/qwen/qwen3.7-plus
     temperature: 1.0
     top_p: 1.0
   # runtime
@@ -46,13 +45,17 @@ reflector:
   agentic: true
   train_minibatch_size: 3
   val_minibatch_size: null
+  # edit budget / learning rate
+  edit_budget: 1        # max patches applied per reflector step (max_lr)
+  min_edit_budget: 1   # floor for cosine/linear decay
+  lr_scheduler: cosine  # constant | linear | cosine
 
 # ── Merger ──────────────────────────────────────────────────────────────
 merger:
   # .md  → .opencode/agents/<agent>
   md:
-    model: openrouter/qwen/qwen3.6-plus
+    model: openrouter/qwen/qwen3.7-plus
     temperature: 0.1
   # runtime
   agent: merger
-  merge_threshold: 0.5
+  merge_threshold: 0.3

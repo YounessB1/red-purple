@@ -1,17 +1,8 @@
 ---
 description: "CTF judge — scores partial agent progress 0.0–0.9"
-model: "openrouter/openai/gpt-5-mini"
+model: "openrouter/qwen/qwen3.7-plus"
 temperature: 0.1
-maxSteps: 30
-tools:
-  bash: true
-  read: false
-  write: false
-  edit: false
-  grep: false
-  glob: false
-  webfetch: false
-  websearch: false
+steps: 30
 permission:
   bash: "allow"
 ---

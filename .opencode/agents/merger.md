@@ -1,24 +1,19 @@
 ---
 description: "Synthesizes two complementary agent candidates into one improved agent"
-model: "openrouter/qwen/qwen3.6-plus"
+model: "openrouter/qwen/qwen3.7-plus"
 temperature: 0.1
-maxSteps: 30
-tools:
-  read: true
-  glob: true
-  grep: true
-  list: true
-  edit: true
-  write: true
-  bash: false
-  task: false
-  webfetch: false
-  websearch: false
+steps: 30
 permission:
+  read: "allow"
+  glob: "allow"
+  grep: "allow"
+  list: "allow"
   edit: "allow"
   write: "allow"
   bash: "deny"
+  task: "deny"
   webfetch: "deny"
+  websearch: "deny"
   external_directory: "deny"
 ---
 

@@ -1,13 +1,21 @@
-"""Agentic prompt reflector — spawns an OpenCode agent that edits agent files in workspace/."""
+"""Agentic prompt reflector — spawns an OpenCode agent that proposes structured patches."""
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
 
 from source.optimize_anything import candidate_store
 from source.optimize_anything.logger import Logger
-from source.optimize_anything.evaluator import _get_iteration, get_current_candidate, set_reflection_was_merge, set_reflection_merge_parent_b_hash
+from source.optimize_anything.evaluator import (
+    _get_iteration,
+    get_current_candidate,
+    set_reflection_was_merge,
+    set_reflection_merge_parent_b_hash,
+)
+from source.optimize_anything.lr_scheduler import LRScheduler
 from source.optimize_anything.opencode_trace import trace_opencode_session
+from source.optimize_anything.patch_applier import apply_patches
 from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict, get_candidates_pool, log
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -34,10 +42,19 @@ def _compute_overlap(val_a: dict, val_b: dict) -> float:
     return len(wins_a & wins_b) / len(wins_a | wins_b)
 
 
+def _load_json(path: Path, default):
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return default
+
+
 # ── Agentic reflector ──────────────────────────────────────────────────
 
 class AgenticReflector:
-    """Spawns an OpenCode agent that reads artifacts and edits agent files in workspace/ in-place."""
+    """Spawns an OpenCode agent that proposes JSON patches; Python applies top-N per edit budget."""
 
     def __init__(
         self,
@@ -48,6 +65,10 @@ class AgenticReflector:
         reflector_agent: str = "reflector",
         merger_agent: str = "merger",
         merger_model: str = "",
+        edit_budget: int = 4,
+        min_edit_budget: int = 2,
+        lr_scheduler: str = "cosine",
+        total_iterations: int = 20,
     ) -> None:
         self._model = model
         self._merger_model = merger_model or model
@@ -56,6 +77,10 @@ class AgenticReflector:
         self._merge_threshold = merge_threshold
         self._reflector_agent = reflector_agent
         self._merger_agent = merger_agent
+        self._scheduler = LRScheduler(edit_budget, min_edit_budget, lr_scheduler)
+        self._total_iterations = total_iterations
+        self._last_applied_patches: list[dict] = []
+        self._merged_pairs: set[frozenset] = set()
 
     def _find_merge_candidates(self, pool: list[dict], current_hash: str) -> tuple[str, str] | None:
         current_entry = next((c for c in pool if c.get("files") == current_hash), None)
@@ -75,6 +100,10 @@ class AgenticReflector:
                 best_hash = c["files"]
 
         if best_hash and best_overlap < self._merge_threshold:
+            pair_key = frozenset([current_hash, best_hash])
+            if pair_key in self._merged_pairs:
+                return None  # already merged this pair → fall through to tweak
+            self._merged_pairs.add(pair_key)
             return current_hash, best_hash
         return None
 
@@ -82,9 +111,10 @@ class AgenticReflector:
         _copy_artifacts(iter_dir)
 
         message = (
-            f"Analyze artifacts and improve the agent strategy. "
-            f"Base path for all file writes: {_ROOT}/ "
-            f"(e.g. {_ROOT}/workspace/agent/prompt.md)"
+            f"Analyze artifacts and propose improvements to the agent strategy. "
+            f"Workspace root: {_ROOT}/ — "
+            f"write your proposed edits to {_ROOT}/workspace/proposed_patches.json "
+            f"and a human-readable summary to {_ROOT}/workspace/reflector_changes.md"
         )
         log(f"\n[agentic-reflector] Starting OpenCode for iteration {_get_iteration()}…")
 
@@ -99,6 +129,38 @@ class AgenticReflector:
 
         input_tokens, output_tokens, cost, steps = trace_opencode_session(_ROOT)
         self._logger.log_reflector(input_tokens, output_tokens, message, raw, cost=cost, steps=steps)
+
+    def _apply_tweak_patches(self, current_files: dict, iter_dir: Path) -> dict:
+        """Read proposed_patches.json, apply budget-clipped subset, return updated files dict."""
+        patches_path = _WORKSPACE / "proposed_patches.json"
+        patches = _load_json(patches_path, [])
+
+        if not isinstance(patches, list) or not patches:
+            log("[agentic-reflector] No valid patches proposed — agent files unchanged")
+            self._last_applied_patches = []
+            return current_files
+
+        iteration = _get_iteration()
+        budget = self._scheduler.get(iteration, self._total_iterations)
+        log(f"[agentic-reflector] {len(patches)} patches proposed, edit budget={budget}")
+
+        selected = patches[:budget]
+
+        new_files, report = apply_patches(current_files, selected)
+        self._last_applied_patches = selected
+
+        applied = sum(1 for r in report if r["status"].startswith("applied"))
+        skipped = sum(1 for r in report if r["status"].startswith("skipped"))
+        log(f"[agentic-reflector] applied={applied} skipped={skipped} (of {len(selected)} selected, {len(patches)} proposed)")
+
+        (iter_dir / "patch_report.json").write_text(
+            json.dumps(
+                {"budget": budget, "proposed": len(patches), "selected": len(selected), "report": report},
+                indent=2, ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return new_files
 
     def _run_merge(self, hash_a: str, hash_b: str, iter_dir: Path) -> None:
         # workspace/agent/ already restored to hash_a (current parent) by __call__
@@ -128,14 +190,32 @@ class AgenticReflector:
         shutil.rmtree(_WORKSPACE / "agent_to_merge", ignore_errors=True)
         set_reflection_was_merge(True)
 
+    def _on_child_rejected(self) -> None:
+        """Called by TracingCallback when GEPA rejects the child. Appends applied patches to blocklist."""
+        if not self._last_applied_patches:
+            return
+        blocklist_path = _WORKSPACE / "patch_blocklist.json"
+        existing: list[dict] = _load_json(blocklist_path, [])
+        existing.extend(self._last_applied_patches)
+        blocklist_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+        log(f"[agentic-reflector] blocklist +{len(self._last_applied_patches)} (child rejected, total={len(existing)})")
+
     def __call__(self, _prompt: str | list[dict]) -> str:
         iteration = _get_iteration()
         iter_dir = self._experiment_dir / f"iteration_{iteration:03d}"
+
+        # Persist blocklist across the workspace clear below
+        blocklist_path = _WORKSPACE / "patch_blocklist.json"
+        blocklist: list[dict] = _load_json(blocklist_path, [])
 
         # Clear entire workspace before repopulating for this iteration
         if _WORKSPACE.exists():
             shutil.rmtree(_WORKSPACE)
         _WORKSPACE.mkdir(parents=True)
+
+        # Restore blocklist so the reflector agent can read it
+        if blocklist:
+            blocklist_path.write_text(json.dumps(blocklist, indent=2, ensure_ascii=False), encoding="utf-8")
 
         # Restore workspace/agent/ to current parent and snapshot for visibility
         current_hash = get_current_candidate().get("files", "")
@@ -153,12 +233,14 @@ class AgenticReflector:
             set_reflection_merge_parent_b_hash(hash_b)
             log(f"[agentic-reflector] iteration {iteration} → merge")
             self._run_merge(hash_a, hash_b, iter_dir)
+            new_files = folder_to_dict(_WORKSPACE_AGENT)  # merger edits workspace/agent/ in place
         else:
             log(f"[agentic-reflector] iteration {iteration} → tweak")
+            current_files = folder_to_dict(_WORKSPACE_AGENT)
             self._run_tweak(iter_dir)
+            new_files = self._apply_tweak_patches(current_files, iter_dir)
 
-        # Common exit: snapshot, hash, store, persist, return
-        new_files = folder_to_dict(_WORKSPACE_AGENT)
+        # Common exit: snapshot, hash, store, return
         new_hash = candidate_hash(new_files)
         candidate_store.store(new_hash, new_files)
         dict_to_folder(iter_dir / "child", new_files)

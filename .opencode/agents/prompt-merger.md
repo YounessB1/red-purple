@@ -2,22 +2,14 @@
 description: "Synthesizes two candidate prompt.md files into one improved prompt"
 model: "openrouter/openai/gpt-5"
 temperature: 0.1
-maxSteps: 10
-tools:
-  read: true
-  glob: false
-  grep: false
-  list: false
-  edit: true
-  write: false
-  bash: false
-  task: false
-  webfetch: false
-  websearch: false
+steps: 10
 permission:
+  read: "allow"
   edit: "allow"
   bash: "deny"
+  task: "deny"
   webfetch: "deny"
+  websearch: "deny"
   external_directory: "deny"
 ---
 

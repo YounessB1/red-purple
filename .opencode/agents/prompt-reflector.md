@@ -2,22 +2,17 @@
 description: "Analyzes CTF agent iteration artifacts and improves prompt.md only"
 model: "openrouter/openai/gpt-5"
 temperature: 0.1
-maxSteps: 20
-tools:
-  read: true
-  glob: true
-  grep: true
-  list: true
-  edit: true
-  write: false
-  bash: false
-  task: false
-  webfetch: false
-  websearch: false
+steps: 20
 permission:
+  read: "allow"
+  glob: "allow"
+  grep: "allow"
+  list: "allow"
   edit: "allow"
   bash: "deny"
+  task: "deny"
   webfetch: "deny"
+  websearch: "deny"
   external_directory: "deny"
 ---
 

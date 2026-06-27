@@ -13,6 +13,7 @@ from source.optimize_anything.callbacks import TracingCallback
 from source.optimize_anything.dataset import load_dataset
 from source.optimize_anything.logger import Logger
 from source.optimize_anything.agentic_reflector import AgenticReflector
+from source.optimize_anything.candidate_selector import ValAvgProportionalSelector
 from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict, next_experiment_dir
 
 _SEED_DIR = Path(__file__).resolve().parents[2] / "source" / "seed"
@@ -87,11 +88,14 @@ def run(
     diagnoser_model = diagnoser["md"].get("model", "")
     diagnoser_gt    = diagnoser.get("gt", False)
 
-    reflector_model  = reflector["md"].get("model", "")
-    reflector_agent  = reflector.get("agent", "reflector")
-    agentic          = reflector.get("agentic", True)
-    train_minibatch  = reflector.get("train_minibatch_size")
-    val_minibatch    = reflector.get("val_minibatch_size")
+    reflector_model    = reflector["md"].get("model", "")
+    reflector_agent    = reflector.get("agent", "reflector")
+    agentic            = reflector.get("agentic", True)
+    train_minibatch    = reflector.get("train_minibatch_size")
+    val_minibatch      = reflector.get("val_minibatch_size")
+    edit_budget        = reflector.get("edit_budget", 4)
+    min_edit_budget    = reflector.get("min_edit_budget", 2)
+    lr_scheduler_mode  = reflector.get("lr_scheduler", "cosine")
 
     merger_model    = merger["md"].get("model", "")
     merger_agent    = merger.get("agent", "merger")
@@ -141,18 +145,20 @@ def run(
     candidate_store.configure(experiment_dir / ".candidates")
 
     # Copy config.yaml into experiment dir for reproducibility
-    shutil.copy2(config_path, experiment_dir / "config.json")
+    shutil.copy2(config_path, experiment_dir / "config.yaml")
 
     adapter = RedPurpleAdapter(workers=workers)
     seed = _build_seed_candidate()
     cache.SEED_CANDIDATE_HASH = candidate_hash(seed)
-    callbacks = [TracingCallback(experiment_dir=experiment_dir, seed_candidate=seed, trainset=train, valset=val)]
+    cb = TracingCallback(experiment_dir=experiment_dir, seed_candidate=seed, trainset=train, valset=val)
+    callbacks = [cb]
 
     print(f"[red-purple] Experiment: {experiment_dir.name}")
     print(f"[red-purple] Train: {len(train)} benchmarks, Val: {len(val)} benchmarks")
     print(f"[red-purple] Budget: {max_calls} calls, {workers} workers")
     print(f"[red-purple] Output: {experiment_dir}\n")
 
+    total_iterations = max(5, max_calls // max(workers, 1))
     lm = (
         AgenticReflector(
             reflector_model, logger, experiment_dir,
@@ -160,9 +166,15 @@ def run(
             reflector_agent=reflector_agent,
             merger_agent=merger_agent,
             merger_model=merger_model or reflector_model,
+            edit_budget=edit_budget,
+            min_edit_budget=min_edit_budget,
+            lr_scheduler=lr_scheduler_mode,
+            total_iterations=total_iterations,
         )
         if agentic and reflector_model else None
     )
+    if lm is not None:
+        cb.set_reflector(lm)
     val_policy = SubsetValPolicy(k=val_minibatch) if val_minibatch is not None else "full_eval"
 
     logger.start_logger()
@@ -174,6 +186,7 @@ def run(
             valset=val,
             adapter=adapter,
             reflection_lm=lm,
+            candidate_selection_strategy=ValAvgProportionalSelector(),
             reflection_minibatch_size=train_minibatch,
             reflection_prompt_template=None,
             max_metric_calls=max_calls,

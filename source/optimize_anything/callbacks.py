@@ -95,6 +95,11 @@ class TracingCallback:
         self._train_ids = [ex["benchmark_id"] for ex in (trainset or [])]
         self._val_ids = [ex["benchmark_id"] for ex in (valset or [])]
         self._current_child_instructions: dict | None = None
+        self._reflector = None
+
+    def set_reflector(self, reflector) -> None:
+        """Wire the AgenticReflector so gate-rejections are forwarded to its blocklist."""
+        self._reflector = reflector
 
     def on_optimization_start(self, event) -> None:
         evaluator.set_gepa_iteration(0)
@@ -122,6 +127,8 @@ class TracingCallback:
         self._current_child_instructions = event.get("new_instructions")
 
     def on_iteration_end(self, event) -> None:
+        if not event["proposal_accepted"] and self._reflector is not None:
+            self._reflector._on_child_rejected()
         self._write_evolution(event["iteration"], event["state"], event["proposal_accepted"])
 
     # ── Seed evolution (iteration 000) ────────────────────────────────────

@@ -1,11 +1,8 @@
 ---
 description: "CTF failure diagnoser — compact failure analysis for the reflector"
-model: "openrouter/qwen/qwen3.6-plus"
+model: "openrouter/qwen/qwen3.7-plus"
 temperature: 0.2
-maxSteps: 30
-tools:
-  bash: true
-  read: false
+steps: 30
 permission:
   bash: "allow"
   doom_loop: "allow"
