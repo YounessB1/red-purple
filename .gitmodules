@@ -1,0 +1,3 @@
+[submodule "xbow"]
+	path = xbow
+	url = https://github.com/YounessB1/xbow-validation-benchmarks.git
