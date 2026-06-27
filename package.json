@@ -1,0 +1,7 @@
+{
+  "name": "red-purple",
+  "private": true,
+  "devDependencies": {
+    "opencode-ai": "1.14.50"
+  }
+}
