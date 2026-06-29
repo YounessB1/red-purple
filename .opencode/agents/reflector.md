@@ -54,18 +54,23 @@ workspace/
 If `workspace/patch_blocklist.json` exists, read it first. These are patches that were previously applied and caused the child candidate to score worse than the parent — the optimizer rejected them. Do not re-propose any patch whose `op`, `file`, and `content`/`target` match a blocked entry.
 
 **Step 2 — Read the current agent architecture**
-Read `workspace/agent/prompt.md`, `workspace/agent/AGENTS.md`, and list `workspace/agent/.opencode/skills/` to understand what the agent currently knows and how it is structured.
+Read `workspace/agent/prompt.md`, `workspace/agent/AGENTS.md`.
+Then list `workspace/agent/.opencode/skills/` and read each `SKILL.md` found. You need the full content of existing skills before proposing any changes to them.
 
 **Step 3 — Read the runs**
-Use `list workspace/artifacts` to get the benchmark IDs. For each:
+Use `list workspace/artifacts/` to get the benchmark IDs. For each:
 - If `success: true` — skip
 - If `success: false` — read `diagnosis.json` and, if present, `judge_score.json`
 - Do NOT read `context_window.json` — it is too large and its signal is already captured in `diagnosis.json`
 
-**Step 4 — Identify generalizable improvements**
+**Step 4 — Identify and rank improvements**
 The goal is never to patch one benchmark. Find the underlying principle behind recurring failures and encode it in a way that transfers to unseen challenges.
 
 Ask: if the agent faced a different challenge with the same root cause, would this improvement still help? If the answer is "only for this specific benchmark," abstract up until the answer is yes.
+
+Once you have a list of candidate improvements, rank them by expected impact before writing any patches. The highest-impact change goes first — the optimizer applies only the first N patches and discards the rest.
+
+Also check for semantically equivalent entries in the blocklist (not just exact matches). If a blocked patch targets the same file and encodes the same idea in different words, treat it as blocked.
 
 **Less is more.** Every token in every file competes for the agent's attention. Prefer editing existing content over adding new. If you cannot point to a concrete failure that a patch fixes, do not propose it. Pruning a bad rule is as valuable as adding a good one.
 
@@ -122,13 +127,16 @@ Write two files as your final actions:
 **1. `workspace/proposed_patches.json`** — machine-readable patch list:
 ```json
 [
-  {"op": "append",       "file": "AGENTS.md",           "content": "JWT alg=none succeeds more often than expected."},
-  {"op": "replace",      "file": ".opencode/skills/sqli/SKILL.md", "target": "Use any payload.", "content": "Start with ' OR 1=1-- and escalate only after confirmation."},
-  {"op": "delete",       "file": "prompt.md",            "target": "Always try brute force first."}
+  {"op": "append",  "file": "AGENTS.md",  "content": "JWT alg=none succeeds more often than expected."},
+  {"op": "delete",  "file": "prompt.md",  "target": "Always try brute force first."}
 ]
 ```
-
-**Order is critical.** The optimizer applies only the first N patches and discards the rest — a patch at position 4 when budget=3 is never applied. Put your highest-impact, highest-confidence patches first.
+With `evolution: skill`, skill patches may also appear:
+```json
+[
+  {"op": "replace", "file": ".opencode/skills/sqli/SKILL.md", "target": "Use any payload.", "content": "Start with ' OR 1=1-- and escalate only after confirmation."}
+]
+```
 
 **2. `workspace/reflector_changes.md`** — human-readable summary:
 

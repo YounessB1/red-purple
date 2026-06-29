@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Red-Purple — entry point. Reads config.json and launches the GEPA optimization loop."""
+"""Red-Purple — entry point. Reads config.yaml and launches the GEPA optimization loop.
+
+config.yaml can be either a single experiment (flat dict, original format) or a list
+of experiments that run sequentially.  Both formats are supported transparently.
+"""
 
 import os
 import signal
@@ -16,9 +20,21 @@ load_dotenv()
 
 REPO_ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = REPO_ROOT / "config.yaml"
+_AGENTS_DIR = REPO_ROOT / ".opencode" / "agents"
+_WORKSPACE  = REPO_ROOT / "workspace"
 
 
-def _on_sigint(signum, frame):
+def _reset_server() -> None:
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request("http://localhost:8000/reset", method="POST"),
+            timeout=5,
+        )
+    except Exception:
+        pass
+
+
+def _on_sigint(signum, frame) -> None:
     print("\n[red-purple] Ctrl+C — stopping all benchmarks and exiting…", flush=True)
     try:
         benchmark.force_stop_all()
@@ -34,32 +50,58 @@ def _on_sigint(signum, frame):
         os._exit(130)
 
 
-def main():
+def main() -> None:
     signal.signal(signal.SIGINT, _on_sigint)
 
-    try:
-        urllib.request.urlopen(
-            urllib.request.Request("http://localhost:8000/reset", method="POST"),
-            timeout=5,
+    raw = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    # Support both a single config (dict) and a list of configs
+    experiments: list[dict] = raw if isinstance(raw, list) else [raw]
+    total = len(experiments)
+
+    # Snapshot agent .md files before any experiment modifies them.
+    # patch_agent() and build_agent_md() edit these in-place; each experiment
+    # must start from the same unpatched originals.
+    agent_originals: dict[Path, str] = {
+        p: p.read_text(encoding="utf-8")
+        for p in sorted(_AGENTS_DIR.glob("*.md"))
+        if p.is_file()
+    }
+
+    for i, cfg in enumerate(experiments, 1):
+        if total > 1:
+            name = cfg.get("experiment_name", f"experiment_{i}")
+            print(f"\n{'=' * 60}")
+            print(f"[red-purple] Experiment {i}/{total}: {name}")
+            print(f"{'=' * 60}\n")
+
+        # Restore agent .md files so every experiment starts from clean originals.
+        for path, content in agent_originals.items():
+            path.write_text(content, encoding="utf-8")
+
+        # Clear the patch blocklist: it accumulates within an experiment by design,
+        # but must not carry over to the next one.
+        blocklist = _WORKSPACE / "patch_blocklist.json"
+        if blocklist.exists():
+            blocklist.unlink()
+
+        _reset_server()
+
+        run(
+            experiments_dir=REPO_ROOT / cfg["experiments_dir"],
+            max_calls=cfg["max_calls"],
+            workers=cfg["workers"],
+            ctf_agent=cfg["ctf_agent"],
+            scorer=cfg["scorer"],
+            diagnoser=cfg["diagnoser"],
+            reflector=cfg["reflector"],
+            merger=cfg["merger"],
+            config_path=CONFIG_PATH,
+            experiment_name=cfg.get("experiment_name"),
+            splits_name=cfg.get("splits", "splits"),
         )
-    except Exception:
-        pass
 
-    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-
-    run(
-        experiments_dir=REPO_ROOT / cfg["experiments_dir"],
-        max_calls=cfg["max_calls"],
-        workers=cfg["workers"],
-        ctf_agent=cfg["ctf_agent"],
-        scorer=cfg["scorer"],
-        diagnoser=cfg["diagnoser"],
-        reflector=cfg["reflector"],
-        merger=cfg["merger"],
-        config_path=CONFIG_PATH,
-        experiment_name=cfg.get("experiment_name"),
-        splits_name=cfg.get("splits", "splits"),
-    )
+    if total > 1:
+        print(f"\n[red-purple] All {total} experiments complete.")
 
 
 if __name__ == "__main__":

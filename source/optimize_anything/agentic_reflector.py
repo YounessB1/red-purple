@@ -69,6 +69,7 @@ class AgenticReflector:
         min_edit_budget: int = 2,
         lr_scheduler: str = "cosine",
         total_iterations: int = 20,
+        evolution: str = "skill",
     ) -> None:
         self._model = model
         self._merger_model = merger_model or model
@@ -79,6 +80,7 @@ class AgenticReflector:
         self._merger_agent = merger_agent
         self._scheduler = LRScheduler(edit_budget, min_edit_budget, lr_scheduler)
         self._total_iterations = total_iterations
+        self._evolution = evolution
         self._last_applied_patches: list[dict] = []
         self._merged_pairs: set[frozenset] = set()
 
@@ -140,6 +142,12 @@ class AgenticReflector:
             self._last_applied_patches = []
             return current_files
 
+        if self._evolution == "prompt":
+            before = len(patches)
+            patches = [p for p in patches if not p.get("file", "").startswith(".opencode/skills/")]
+            if len(patches) < before:
+                log(f"[agentic-reflector] Filtered {before - len(patches)} skill patches (evolution=prompt)")
+
         iteration = _get_iteration()
         budget = self._scheduler.get(iteration, self._total_iterations)
         log(f"[agentic-reflector] {len(patches)} patches proposed, edit budget={budget}")
@@ -167,11 +175,10 @@ class AgenticReflector:
         candidate_store.restore_workspace(hash_b, _WORKSPACE / "agent_to_merge")
 
         message = (
-            "Analyze the two candidate agents and the failure artifacts, "
-            "then write a synthesized agent to workspace/agent/ that combines "
-            "the best ideas from both. "
-            f"Base path for all file writes: {_ROOT}/ "
-            f"(e.g. {_ROOT}/workspace/agent/prompt.md)"
+            f"Analyze both candidate agents and propose patches that synthesize the best of both. "
+            f"Workspace root: {_ROOT}/ — "
+            f"write your proposed edits to {_ROOT}/workspace/proposed_patches.json "
+            f"and a human-readable summary to {_ROOT}/workspace/reflector_changes.md"
         )
         log(f"\n[agentic-reflector] MERGE — {hash_a[:10]}… + {hash_b[:10]}…")
 
@@ -232,8 +239,9 @@ class AgenticReflector:
             hash_a, hash_b = pair
             set_reflection_merge_parent_b_hash(hash_b)
             log(f"[agentic-reflector] iteration {iteration} → merge")
+            current_files = folder_to_dict(_WORKSPACE_AGENT)
             self._run_merge(hash_a, hash_b, iter_dir)
-            new_files = folder_to_dict(_WORKSPACE_AGENT)  # merger edits workspace/agent/ in place
+            new_files = self._apply_tweak_patches(current_files, iter_dir)
         else:
             log(f"[agentic-reflector] iteration {iteration} → tweak")
             current_files = folder_to_dict(_WORKSPACE_AGENT)

@@ -5,6 +5,11 @@ import re
 import shutil
 from pathlib import Path
 
+_SKILL_SECTION_RE = re.compile(
+    r"[ \t]*<!-- SKILL_SECTION_START -->.*?<!-- SKILL_SECTION_END -->\n?",
+    re.DOTALL,
+)
+
 from gepa import optimize
 
 from source.optimize_anything import cache, candidate_store, evaluator
@@ -27,6 +32,16 @@ def flush_logger() -> None:
     """Write the experiment summary to disk. Safe to call from a signal handler."""
     if _active_logger is not None:
         _active_logger.write_summary()
+
+
+def build_agent_md(md_path: Path, evolution: str) -> None:
+    """Strip or keep <!-- SKILL_SECTION_START/END --> blocks based on evolution mode."""
+    content = md_path.read_text(encoding="utf-8")
+    if evolution == "prompt":
+        content = _SKILL_SECTION_RE.sub("", content)
+    else:
+        content = re.sub(r"[ \t]*<!-- SKILL_SECTION_(?:START|END) -->\n?", "", content)
+    md_path.write_text(content, encoding="utf-8")
 
 
 def patch_agent(md_path: Path, md_params: dict) -> None:
@@ -100,6 +115,7 @@ def run(
     merger_model    = merger["md"].get("model", "")
     merger_agent    = merger.get("agent", "merger")
     merge_threshold = merger.get("merge_threshold", 0.3)
+    evolution       = reflector.get("evolution", "skill")
 
     # ── Patch agent .md files from config ─────────────────────────────
     patch_agent(_SEED_DIR / ".opencode" / "agents" / "ctf-agent.md", ctf_agent["md"])
@@ -107,6 +123,8 @@ def run(
     patch_agent(_AGENTS_DIR / "diagnoser.md", diagnoser["md"])
     patch_agent(_AGENTS_DIR / f"{reflector_agent}.md", reflector["md"])
     patch_agent(_AGENTS_DIR / f"{merger_agent}.md",    merger["md"])
+    build_agent_md(_AGENTS_DIR / f"{reflector_agent}.md", evolution)
+    build_agent_md(_AGENTS_DIR / f"{merger_agent}.md",    evolution)
 
     # ── Resolve experiment directory ───────────────────────────────────
     if experiment_name:
@@ -170,6 +188,7 @@ def run(
             min_edit_budget=min_edit_budget,
             lr_scheduler=lr_scheduler_mode,
             total_iterations=total_iterations,
+            evolution=evolution,
         )
         if agentic and reflector_model else None
     )
