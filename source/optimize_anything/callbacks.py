@@ -96,6 +96,7 @@ class TracingCallback:
         self._val_ids = [ex["benchmark_id"] for ex in (valset or [])]
         self._current_child_instructions: dict | None = None
         self._reflector = None
+        self._skip_child_rejected = False
 
     def set_reflector(self, reflector) -> None:
         """Wire the AgenticReflector so gate-rejections are forwarded to its blocklist."""
@@ -112,6 +113,7 @@ class TracingCallback:
         evaluator.set_reflection_was_merge(False)
         evaluator.set_reflection_merge_parent_b_hash("")
         self._current_child_instructions = None
+        self._skip_child_rejected = False
         self._write_pool(event["iteration"], event["state"])
         seed_evo_path = self._experiment_dir / "iteration_000" / "evolution.json"
         if not seed_evo_path.exists():
@@ -123,11 +125,15 @@ class TracingCallback:
         else:
             evaluator.set_gepa_role("child")
 
+    def on_evaluation_skipped(self, event) -> None:
+        if event.get("reason") in ("all_scores_perfect", "no_trajectories"):
+            self._skip_child_rejected = True
+
     def on_proposal_end(self, event) -> None:
         self._current_child_instructions = event.get("new_instructions")
 
     def on_iteration_end(self, event) -> None:
-        if not event["proposal_accepted"] and self._reflector is not None:
+        if not event["proposal_accepted"] and not self._skip_child_rejected and self._reflector is not None:
             self._reflector._on_child_rejected()
         self._write_evolution(event["iteration"], event["state"], event["proposal_accepted"])
 

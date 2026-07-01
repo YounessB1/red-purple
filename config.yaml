@@ -1,72 +1,9 @@
 # Single experiment: flat dict (original format), or a list for sequential runs.
 # Both formats are supported by main.py.
 
-- experiment_name: PoC_basics_Gemma4
+- experiment_name: PoC_basics_Gemma4_new
   experiments_dir: experiments
   splits: PoC_basics
-  max_calls: 150
-  workers: 3
-
-  # ── CTF Agent ─────────────────────────────────────────────────────────
-  ctf_agent:
-    # .md  → source/seed/.opencode/agents/ctf-agent.md
-    md:
-      model: openrouter/google/gemma-4-31b-it
-      maxSteps: 50
-    # runtime
-    server_url: http://localhost:8000
-
-  # ── Scorer ────────────────────────────────────────────────────────────
-  scorer:
-    # .md  → .opencode/agents/scorer.md
-    md:
-      model: openrouter/qwen/qwen3.7-plus
-      temperature: 0.1
-    # runtime
-    gt: true
-
-  # ── Diagnoser ─────────────────────────────────────────────────────────
-  diagnoser:
-    # .md  → .opencode/agents/diagnoser.md
-    md:
-      model: openrouter/qwen/qwen3.7-plus
-      temperature: 0.2
-      max_tokens: 4000
-    # runtime
-    gt: true
-
-  # ── Reflector ─────────────────────────────────────────────────────────
-  reflector:
-    # .md  → .opencode/agents/<agent>
-    md:
-      model: openrouter/qwen/qwen3.7-plus
-      temperature: 1.0
-      top_p: 1.0
-    # runtime
-    agent: reflector
-    agentic: true
-    train_minibatch_size: 3
-    val_minibatch_size: null
-    # edit budget / learning rate
-    evolution: skill      # prompt | skill — controls what reflector/merger may change
-    edit_budget: 4        # max patches applied per reflector step (max_lr)
-    min_edit_budget: 1    # floor for cosine/linear decay
-    lr_scheduler: cosine  # constant | linear | cosine
-
-  # ── Merger ────────────────────────────────────────────────────────────
-  merger:
-    # .md  → .opencode/agents/<agent>
-    md:
-      model: openrouter/qwen/qwen3.7-plus
-      temperature: 0.1
-    # runtime
-    agent: merger
-    merge_threshold: 0.3
-
-
-- experiment_name: PoC_generalization_Gemma4
-  experiments_dir: experiments
-  splits: PoC_generalization
   max_calls: 150
   workers: 3
 

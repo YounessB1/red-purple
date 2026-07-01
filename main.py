@@ -95,7 +95,7 @@ def main() -> None:
             diagnoser=cfg["diagnoser"],
             reflector=cfg["reflector"],
             merger=cfg["merger"],
-            config_path=CONFIG_PATH,
+            experiment_config=cfg,
             experiment_name=cfg.get("experiment_name"),
             splits_name=cfg.get("splits", "splits"),
         )

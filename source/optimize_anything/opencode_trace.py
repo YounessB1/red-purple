@@ -47,8 +47,16 @@ def trace_opencode_session(workdir: Path) -> tuple[int, int, float, list]:
                 steps.append({"type": "text", "text": part["text"].strip()})
             elif ptype == "tool":
                 name = part.get("tool", "?")
-                state = part.get("state", {})
-                inp = state.get("input", {}) if isinstance(state, dict) else {}
+                state = part.get("state", {}) if isinstance(part.get("state"), dict) else {}
+                # Skip phantom abort entries (same callID re-emitted as unknown+interrupted
+                # after a parallel tool completes — OpenCode parallel-execution artifact).
+                if (
+                    name == "unknown"
+                    and state.get("status") == "error"
+                    and (state.get("metadata") or {}).get("interrupted")
+                ):
+                    continue
+                inp = state.get("input", {})
                 steps.append({"type": "tool", "name": name, "input": inp})
         return input_tokens, output_tokens, cost or 0.0, steps
     finally:

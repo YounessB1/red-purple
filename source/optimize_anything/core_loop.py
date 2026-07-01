@@ -5,10 +5,7 @@ import re
 import shutil
 from pathlib import Path
 
-_SKILL_SECTION_RE = re.compile(
-    r"[ \t]*<!-- SKILL_SECTION_START -->.*?<!-- SKILL_SECTION_END -->\n?",
-    re.DOTALL,
-)
+import yaml
 
 from gepa import optimize
 
@@ -20,6 +17,7 @@ from source.optimize_anything.logger import Logger
 from source.optimize_anything.agentic_reflector import AgenticReflector
 from source.optimize_anything.candidate_selector import ValAvgProportionalSelector
 from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict, next_experiment_dir
+from source.optimize_anything.prompts import REFLECTOR_SKILL, REFLECTOR_PROMPT, MERGER_SKILL, MERGER_PROMPT
 
 _SEED_DIR = Path(__file__).resolve().parents[2] / "source" / "seed"
 _WORKSPACE = Path(__file__).resolve().parents[2] / "workspace"
@@ -34,23 +32,14 @@ def flush_logger() -> None:
         _active_logger.write_summary()
 
 
-def build_agent_md(md_path: Path, evolution: str) -> None:
-    """Strip or keep <!-- SKILL_SECTION_START/END --> blocks based on evolution mode."""
-    content = md_path.read_text(encoding="utf-8")
-    if evolution == "prompt":
-        content = _SKILL_SECTION_RE.sub("", content)
-    else:
-        content = re.sub(r"[ \t]*<!-- SKILL_SECTION_(?:START|END) -->\n?", "", content)
-    md_path.write_text(content, encoding="utf-8")
-
-
-def patch_agent(md_path: Path, md_params: dict) -> None:
+def patch_agent(md_path: Path, md_params: dict, body: str | None = None) -> None:
     """Write config md_params into an OpenCode agent .md frontmatter.
 
     For each key/value pair, replaces the matching `key: ...` line in the
     frontmatter.  Silently skips None values so absent config keys leave the
     .md default intact.  String values are double-quoted; numbers/bools are
-    written as-is.
+    written as-is.  If body is provided, replaces everything after the closing
+    frontmatter delimiter with that content.
     """
     content = md_path.read_text(encoding="utf-8")
     for key, value in md_params.items():
@@ -58,6 +47,10 @@ def patch_agent(md_path: Path, md_params: dict) -> None:
             continue
         formatted = f'"{value}"' if isinstance(value, str) else str(value)
         content = re.sub(rf'(?m)^{re.escape(key)}:.*$', f'{key}: {formatted}', content)
+    if body is not None:
+        parts = content.split("---", 2)
+        frontmatter = f"---{parts[1]}---\n" if len(parts) >= 3 else ""
+        content = frontmatter + body.lstrip("\n")
     md_path.write_text(content, encoding="utf-8")
 
 
@@ -83,7 +76,7 @@ def run(
     diagnoser: dict,
     reflector: dict,
     merger: dict,
-    config_path: Path,
+    experiment_config: dict,
     experiment_name: str | None = None,
     splits_name: str = "splits",
 ) -> None:
@@ -121,10 +114,10 @@ def run(
     patch_agent(_SEED_DIR / ".opencode" / "agents" / "ctf-agent.md", ctf_agent["md"])
     patch_agent(_AGENTS_DIR / "scorer.md",   scorer["md"])
     patch_agent(_AGENTS_DIR / "diagnoser.md", diagnoser["md"])
-    patch_agent(_AGENTS_DIR / f"{reflector_agent}.md", reflector["md"])
-    patch_agent(_AGENTS_DIR / f"{merger_agent}.md",    merger["md"])
-    build_agent_md(_AGENTS_DIR / f"{reflector_agent}.md", evolution)
-    build_agent_md(_AGENTS_DIR / f"{merger_agent}.md",    evolution)
+    reflector_body = REFLECTOR_SKILL if evolution == "skill" else REFLECTOR_PROMPT
+    merger_body    = MERGER_SKILL    if evolution == "skill" else MERGER_PROMPT
+    patch_agent(_AGENTS_DIR / f"{reflector_agent}.md", reflector["md"], body=reflector_body)
+    patch_agent(_AGENTS_DIR / f"{merger_agent}.md",    merger["md"],    body=merger_body)
 
     # ── Resolve experiment directory ───────────────────────────────────
     if experiment_name:
@@ -162,8 +155,11 @@ def run(
     cache.CACHE_DIR = experiments_dir / ".eval_cache"
     candidate_store.configure(experiment_dir / ".candidates")
 
-    # Copy config.yaml into experiment dir for reproducibility
-    shutil.copy2(config_path, experiment_dir / "config.yaml")
+    # Write only this experiment's config for reproducibility
+    (experiment_dir / "config.yaml").write_text(
+        yaml.dump(experiment_config, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
 
     adapter = RedPurpleAdapter(workers=workers)
     seed = _build_seed_candidate()

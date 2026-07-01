@@ -3,6 +3,8 @@ description: "CTF judge — scores partial agent progress 0.0–0.9"
 model: "openrouter/qwen/qwen3.7-plus"
 temperature: 0.1
 steps: 30
+options:
+  parallelToolCalls: false
 permission:
   bash: "allow"
 ---

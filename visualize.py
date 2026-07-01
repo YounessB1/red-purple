@@ -565,19 +565,34 @@ function renderInfoSidebar() {
   const sum = DATA.summary || {};
   const el  = document.getElementById('info-sidebar');
 
-  // ── Config panel ──
+  // ── Config panel — supports nested format (ctf_agent/scorer/…) and legacy flat format ──
   let cfgRows = '';
-  if (cfg.agent_model)          cfgRows += row('agent model',    esc(shortModel(cfg.agent_model)), 'mono');
-  if (cfg.reflection_lm)        cfgRows += row('reflector',      esc(shortModel(cfg.reflection_lm)), 'mono');
-  if (cfg.diagnoser_model)      cfgRows += row('diagnoser',      esc(shortModel(cfg.diagnoser_model)), 'mono');
-  if (cfg.judge_model)          cfgRows += row('judge',          esc(shortModel(cfg.judge_model)), 'mono');
-  if (cfg.max_calls != null)    cfgRows += row('budget',         `${cfg.max_calls} calls`);
-  if (cfg.workers != null)      cfgRows += row('workers',        cfg.workers);
-  if (cfg.agent_max_iter != null) cfgRows += row('agent max iter', cfg.agent_max_iter);
-  if (cfg.train_minibatch_size != null) cfgRows += row('train batch', cfg.train_minibatch_size);
-  cfgRows += row('val batch', cfg.val_minibatch_size != null ? cfg.val_minibatch_size : 'full');
-  if (cfg.gt != null)           cfgRows += row('ground truth',   cfg.gt ? 'yes' : 'no');
-  if (cfg.background_context)   cfgRows += row('context file',   esc(cfg.background_context), 'mono');
+  // Resolve values from nested format first, fall back to legacy flat keys
+  const agentModel    = cfg.ctf_agent?.md?.model      || cfg.agent_model;
+  const reflModel     = cfg.reflector?.md?.model      || cfg.reflection_lm;
+  const diagModel     = cfg.diagnoser?.md?.model      || cfg.diagnoser_model;
+  const judgeModel    = cfg.scorer?.md?.model         || cfg.judge_model;
+  const maxSteps      = cfg.ctf_agent?.md?.maxSteps   || cfg.agent_max_iter;
+  const trainBatch    = cfg.reflector?.train_minibatch_size ?? cfg.train_minibatch_size;
+  const valBatch      = cfg.reflector?.val_minibatch_size   ?? cfg.val_minibatch_size;
+  const gt            = cfg.scorer?.gt                ?? cfg.gt;
+  const evolution     = cfg.reflector?.evolution;
+  const splits        = cfg.splits;
+
+  if (cfg.experiment_name) cfgRows += row('experiment',    esc(cfg.experiment_name));
+  if (splits)              cfgRows += row('splits',        esc(splits));
+  if (agentModel)          cfgRows += row('agent model',   esc(shortModel(agentModel)), 'mono');
+  if (reflModel)           cfgRows += row('reflector',     esc(shortModel(reflModel)), 'mono');
+  if (diagModel)           cfgRows += row('diagnoser',     esc(shortModel(diagModel)), 'mono');
+  if (judgeModel)          cfgRows += row('judge',         esc(shortModel(judgeModel)), 'mono');
+  if (cfg.max_calls != null) cfgRows += row('budget',      `${cfg.max_calls} calls`);
+  if (cfg.workers   != null) cfgRows += row('workers',     cfg.workers);
+  if (maxSteps      != null) cfgRows += row('agent max steps', maxSteps);
+  if (trainBatch    != null) cfgRows += row('train batch', trainBatch);
+  cfgRows += row('val batch', valBatch != null ? valBatch : 'full');
+  if (gt            != null) cfgRows += row('ground truth', gt ? 'yes' : 'no');
+  if (evolution)             cfgRows += row('evolution',   esc(evolution));
+  if (cfg.background_context) cfgRows += row('context file', esc(cfg.background_context), 'mono');
 
   // ── Summary panel ──
   let sumRows = '';
