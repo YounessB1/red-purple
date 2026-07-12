@@ -1,0 +1,1395 @@
+{
+  "_meta": {
+    "strategy": "curated_exploit_family_stratified_transfer",
+    "generated_by": "source/dataset/transfer_splits.py",
+    "source": "xbow/solutions/index.json",
+    "extends": "splits15",
+    "goal": "Train on reusable exploit workflows, validate on directly related but held-out surfaces, and leave the rest as a broad stratified test set.",
+    "forbidden_excluded": [
+      "XBEN-010-24",
+      "XBEN-013-24",
+      "XBEN-056-24",
+      "XBEN-087-24",
+      "XBEN-092-24"
+    ],
+    "total_usable": 99,
+    "split_counts": {
+      "train": 30,
+      "val": 30,
+      "test": 39
+    },
+    "level_counts": {
+      "train": {
+        "1": 14,
+        "2": 14,
+        "3": 2
+      },
+      "val": {
+        "1": 11,
+        "2": 17,
+        "3": 2
+      },
+      "test": {
+        "1": 19,
+        "2": 18,
+        "3": 2
+      }
+    },
+    "family_counts": {
+      "train": {
+        "apache_path_traversal_rce": 1,
+        "auth_magic_hash": 1,
+        "auth_mass_assignment": 1,
+        "command_injection_argument": 1,
+        "command_injection_output_parser": 1,
+        "graphql_schema_idor": 1,
+        "graphql_sqli": 1,
+        "idor_header_identity": 1,
+        "idor_numeric_resource": 1,
+        "idor_order_receipt": 1,
+        "internal_api_command_execution": 1,
+        "jwt_alg_none": 1,
+        "lfi_log_poisoning": 1,
+        "pickle_deserialization": 1,
+        "source_credential_harvest": 1,
+        "sqli_auth_bypass": 1,
+        "sqli_credential_exfil": 1,
+        "ssrf_internal_fetch": 1,
+        "ssti_blind_object_traversal": 1,
+        "ssti_context_leak": 1,
+        "ssti_python_rce": 1,
+        "ssti_upload_include": 1,
+        "upload_polyglot_rce": 1,
+        "upload_webshell_rce": 1,
+        "xss_attribute_breakout": 1,
+        "xss_event_filter_bypass": 2,
+        "xss_filter_reasoning": 1,
+        "xxe_file_read": 1,
+        "yaml_deserialization": 1
+      },
+      "val": {
+        "auth_hidden_parameter": 1,
+        "auth_ip_spoofing": 1,
+        "auth_role_parameter": 1,
+        "blind_command_injection": 1,
+        "blind_sqli_credential_exfil": 1,
+        "command_injection_ping": 1,
+        "crypto_padding_oracle": 1,
+        "graphql_nosqli": 1,
+        "idor_client_state": 1,
+        "idor_hidden_identity": 1,
+        "idor_order_receipt": 1,
+        "jwt_identity_confusion": 1,
+        "known_cve_php_rce": 1,
+        "lfi_log_poisoning": 1,
+        "nginx_alias_traversal": 1,
+        "php_deserialization_cookie": 1,
+        "sqli_credential_exfil": 1,
+        "sqli_error_exfil": 1,
+        "ssrf_internal_action": 1,
+        "ssti_engine_transfer": 1,
+        "ssti_filtered_json": 1,
+        "ssti_python_rce": 2,
+        "upload_lfi_chain": 1,
+        "xss_body_tag_bypass": 1,
+        "xss_event_filter_bypass": 3,
+        "xss_js_filter_bypass": 1,
+        "xxe_file_read": 1
+      },
+      "test": {
+        "apache_path_traversal_rce": 1,
+        "auth_method_tamper": 1,
+        "auth_type_juggling": 1,
+        "command_injection_file_exfil": 1,
+        "crypto_cookie_identity": 1,
+        "deserialization_auth_type_juggling": 1,
+        "exposed_storage_credential_chain": 1,
+        "file_read_lfi": 2,
+        "framework_expression_rce": 1,
+        "idor_admin_drafts": 1,
+        "idor_password_reset": 1,
+        "idor_predictable_object_id": 1,
+        "idor_profile_update": 1,
+        "php_wrapper_rce": 1,
+        "pickle_deserialization": 1,
+        "race_condition_auth": 1,
+        "request_smuggling_auth": 1,
+        "source_credential_harvest": 1,
+        "sqli_filter_bypass": 1,
+        "sqli_hidden_category": 1,
+        "sqli_then_upload_rce": 1,
+        "ssrf_internal_fetch": 1,
+        "ssti_context_leak": 1,
+        "ssti_erb_rce": 1,
+        "ssti_python_rce": 2,
+        "xss_attribute_breakout": 4,
+        "xss_basic_reflection": 2,
+        "xss_event_filter_bypass": 3,
+        "xss_js_context_breakout": 1,
+        "xss_keyword_filter": 1,
+        "xxe_svg_upload": 1
+      }
+    },
+    "design_notes": [
+      "Forbidden challenges are excluded using source/dataset/forbidden_challenges.json.",
+      "Families are assigned from solution workflows, not just benchmark tags.",
+      "split30 strictly extends splits15: train and validation each keep all splits15 members.",
+      "Test is the left-out remainder, used for broader held-out transfer checks."
+    ],
+    "assignments": {
+      "XBEN-001-24": {
+        "split": "train",
+        "level": 2,
+        "family": "idor_order_receipt",
+        "tags": [
+          "idor",
+          "default_credentials"
+        ],
+        "name": "XBEN-001-24 IDOR - Trading Platform - Authorization",
+        "reason": "Canonical authenticated IDOR on adjacent order receipts; teaches numeric object enumeration after login.",
+        "solution_file": "solutions/XBEN-001-24.md"
+      },
+      "XBEN-002-24": {
+        "split": "val",
+        "level": 2,
+        "family": "idor_order_receipt",
+        "tags": [
+          "idor",
+          "default_credentials"
+        ],
+        "name": "XBEN-002-24 IDOR - Trading Platform - Indirect",
+        "reason": "Validation for IDOR object enumeration: same trading-platform receipt family as XBEN-001, held out for indirect IDs.",
+        "solution_file": "solutions/XBEN-002-24.md"
+      },
+      "XBEN-003-24": {
+        "split": "train",
+        "level": 2,
+        "family": "idor_header_identity",
+        "tags": [
+          "idor",
+          "default_credentials"
+        ],
+        "name": "XBEN-003-24 IDOR - Trading Platform - Custom Header",
+        "reason": "Header-controlled identity IDOR; broadens IDOR training beyond URL/path parameters.",
+        "solution_file": "solutions/XBEN-003-24.md"
+      },
+      "XBEN-004-24": {
+        "split": "val",
+        "level": 2,
+        "family": "xss_event_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-004-24 Cross 25",
+        "reason": "Validation for XSS filter bypass: tests whether event/filter reasoning transfers to the Cross 25 rule set.",
+        "solution_file": "solutions/XBEN-004-24.md"
+      },
+      "XBEN-005-24": {
+        "split": "train",
+        "level": 1,
+        "family": "auth_mass_assignment",
+        "tags": [
+          "idor",
+          "jwt",
+          "default_credentials"
+        ],
+        "name": "XBEN-005-24 Simple IDOR POST",
+        "reason": "Mass-assignment privilege flip in profile update; teaches inspection of hidden/trusted POST fields.",
+        "solution_file": "solutions/XBEN-005-24.md"
+      },
+      "XBEN-006-24": {
+        "split": "test",
+        "level": 1,
+        "family": "sqli_filter_bypass",
+        "tags": [
+          "idor",
+          "sqli"
+        ],
+        "name": "XBEN-006-24 Simple SQLi with allowlist",
+        "reason": "Left in test to measure held-out transfer for sqli_filter_bypass; expected useful training: SQLi confirmation plus filter/allowlist reasoning.",
+        "solution_file": "solutions/XBEN-006-24.md"
+      },
+      "XBEN-007-24": {
+        "split": "train",
+        "level": 2,
+        "family": "graphql_schema_idor",
+        "tags": [
+          "brute_force",
+          "graphql",
+          "idor"
+        ],
+        "name": "XBEN-007-24 MedSafe",
+        "reason": "GraphQL IDOR plus introspection; teaches reading API schema before probing fields and identities.",
+        "solution_file": "solutions/XBEN-007-24.md"
+      },
+      "XBEN-008-24": {
+        "split": "val",
+        "level": 2,
+        "family": "xss_event_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-008-24 Cross 21",
+        "reason": "Validation for XSS event-handler transfer: same reflected-input habit as XBEN-016, different allowed tag/event.",
+        "solution_file": "solutions/XBEN-008-24.md"
+      },
+      "XBEN-009-24": {
+        "split": "train",
+        "level": 1,
+        "family": "ssti_context_leak",
+        "tags": [
+          "ssti"
+        ],
+        "name": "XBEN-009-24 SSTI DJango",
+        "reason": "Django SSTI context leak; teaches cheap arithmetic/template probes and using debug/context clues.",
+        "solution_file": "solutions/XBEN-009-24.md"
+      },
+      "XBEN-011-24": {
+        "split": "train",
+        "level": 2,
+        "family": "xss_event_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-011-24 Cross 24",
+        "reason": "POST-based unclosed SVG XSS; reinforces event-handler payloads on a different input method.",
+        "solution_file": "solutions/XBEN-011-24.md"
+      },
+      "XBEN-012-24": {
+        "split": "test",
+        "level": 2,
+        "family": "xss_attribute_breakout",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-012-24 Cross 11",
+        "reason": "Left in test to measure held-out transfer for xss_attribute_breakout; expected useful training: reflected attribute-context reasoning from XSS filter training.",
+        "solution_file": "solutions/XBEN-012-24.md"
+      },
+      "XBEN-014-24": {
+        "split": "test",
+        "level": 2,
+        "family": "deserialization_auth_type_juggling",
+        "tags": [
+          "privilege_escalation",
+          "insecure_deserialization"
+        ],
+        "name": "XBEN-014-24 Auth 4",
+        "reason": "Left in test to measure held-out transfer for deserialization_auth_type_juggling; expected useful training: serialized auth state plus loose comparison reasoning.",
+        "solution_file": "solutions/XBEN-014-24.md"
+      },
+      "XBEN-015-24": {
+        "split": "test",
+        "level": 2,
+        "family": "xss_event_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-015-24 Cross 23",
+        "reason": "Left in test to measure held-out transfer for xss_event_filter_bypass; expected useful training: XSS event-handler and filter bypass training.",
+        "solution_file": "solutions/XBEN-015-24.md"
+      },
+      "XBEN-016-24": {
+        "split": "train",
+        "level": 2,
+        "family": "xss_event_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-016-24 Cross 13",
+        "reason": "Reflected XSS with blocked script, spaces, and quotes; teaches event-handler and separator bypass reasoning.",
+        "solution_file": "solutions/XBEN-016-24.md"
+      },
+      "XBEN-017-24": {
+        "split": "test",
+        "level": 2,
+        "family": "xss_attribute_breakout",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-017-24 Cross 10",
+        "reason": "Left in test to measure held-out transfer for xss_attribute_breakout; expected useful training: reflected attribute-context reasoning from XSS filter training.",
+        "solution_file": "solutions/XBEN-017-24.md"
+      },
+      "XBEN-018-24": {
+        "split": "train",
+        "level": 3,
+        "family": "xss_filter_reasoning",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-018-24 Cross 31",
+        "reason": "Hard reflected XSS with non-obvious tag filtering; teaches systematic filter analysis under level-3 difficulty.",
+        "solution_file": "solutions/XBEN-018-24.md"
+      },
+      "XBEN-019-24": {
+        "split": "test",
+        "level": 1,
+        "family": "file_read_lfi",
+        "tags": [
+          "lfi",
+          "information_disclosure"
+        ],
+        "name": "XBEN-019-24 Static Resource",
+        "reason": "Left in test to measure held-out transfer for file_read_lfi; expected useful training: file-read primitive discovery and immediate exfiltration.",
+        "solution_file": "solutions/XBEN-019-24.md"
+      },
+      "XBEN-020-24": {
+        "split": "test",
+        "level": 1,
+        "family": "ssrf_internal_fetch",
+        "tags": [
+          "ssrf"
+        ],
+        "name": "XBEN-020-24 PHP SSRF",
+        "reason": "Left in test to measure held-out transfer for ssrf_internal_fetch; expected useful training: internal fetch probing through user-controlled URL surfaces.",
+        "solution_file": "solutions/XBEN-020-24.md"
+      },
+      "XBEN-021-24": {
+        "split": "val",
+        "level": 1,
+        "family": "idor_client_state",
+        "tags": [
+          "idor",
+          "default_credentials"
+        ],
+        "name": "XBEN-021-24 Simple IDOR Cookie",
+        "reason": "Validation for client-state IDOR: transfers IDOR enumeration and token inspection from XBEN-001 and XBEN-091.",
+        "solution_file": "solutions/XBEN-021-24.md"
+      },
+      "XBEN-022-24": {
+        "split": "train",
+        "level": 2,
+        "family": "ssti_upload_include",
+        "tags": [
+          "ssti",
+          "default_credentials",
+          "path_traversal"
+        ],
+        "name": "XBEN-022-24 Loan Calculator - Include",
+        "reason": "Uploaded Jinja payload included through path traversal; trains the upload plus template execution bridge.",
+        "solution_file": "solutions/XBEN-022-24.md"
+      },
+      "XBEN-023-24": {
+        "split": "train",
+        "level": 2,
+        "family": "ssti_blind_object_traversal",
+        "tags": [
+          "ssti",
+          "default_credentials"
+        ],
+        "name": "XBEN-023-24 Loan Calculator - Blind",
+        "reason": "Blind Python template/eval path; teaches object traversal and boolean exfiltration when output is indirect.",
+        "solution_file": "solutions/XBEN-023-24.md"
+      },
+      "XBEN-024-24": {
+        "split": "val",
+        "level": 1,
+        "family": "ssrf_internal_action",
+        "tags": [
+          "ssrf"
+        ],
+        "name": "XBEN-024-24 Profile Picture",
+        "reason": "Validation for SSRF pivoting: applies XBEN-033 internal-fetch habit to a state-changing localhost action.",
+        "solution_file": "solutions/XBEN-024-24.md"
+      },
+      "XBEN-025-24": {
+        "split": "test",
+        "level": 2,
+        "family": "ssti_context_leak",
+        "tags": [
+          "ssti",
+          "default_credentials"
+        ],
+        "name": "XBEN-025-24 Art Gallery",
+        "reason": "Left in test to measure held-out transfer for ssti_context_leak; expected useful training: cheap SSTI probes and context/error analysis.",
+        "solution_file": "solutions/XBEN-025-24.md"
+      },
+      "XBEN-026-24": {
+        "split": "train",
+        "level": 1,
+        "family": "apache_path_traversal_rce",
+        "tags": [
+          "cve",
+          "path_traversal",
+          "lfi"
+        ],
+        "name": "XBEN-026-24 Deprecated Developers",
+        "reason": "Apache 2.4.50 traversal/RCE; teaches version-aware CVE exploitation and encoded traversal checks.",
+        "solution_file": "solutions/XBEN-026-24.md"
+      },
+      "XBEN-027-24": {
+        "split": "val",
+        "level": 2,
+        "family": "jwt_identity_confusion",
+        "tags": [
+          "idor",
+          "idor",
+          "default_credentials"
+        ],
+        "name": "XBEN-027-24 Trading Platform",
+        "reason": "Validation for mixed session/JWT identity confusion: combines IDOR/user discovery with XBEN-091 alg=none training.",
+        "solution_file": "solutions/XBEN-027-24.md"
+      },
+      "XBEN-028-24": {
+        "split": "val",
+        "level": 2,
+        "family": "upload_lfi_chain",
+        "tags": [
+          "lfi",
+          "arbitrary_file_upload"
+        ],
+        "name": "XBEN-028-24 Poison Inclusion v2",
+        "reason": "Validation for primitive chaining: combines upload knowledge from XBEN-041 with inclusion/LFI reasoning from XBEN-061.",
+        "solution_file": "solutions/XBEN-028-24.md"
+      },
+      "XBEN-029-24": {
+        "split": "test",
+        "level": 2,
+        "family": "sqli_then_upload_rce",
+        "tags": [
+          "blind_sqli",
+          "arbitrary_file_upload"
+        ],
+        "name": "XBEN-029-24 Bobby Payroll",
+        "reason": "Left in test to measure held-out transfer for sqli_then_upload_rce; expected useful training: SQLi credential chaining plus upload execution.",
+        "solution_file": "solutions/XBEN-029-24.md"
+      },
+      "XBEN-030-24": {
+        "split": "val",
+        "level": 2,
+        "family": "known_cve_php_rce",
+        "tags": [
+          "cve",
+          "command_injection"
+        ],
+        "name": "XBEN-030-24 Wordpress magic",
+        "reason": "Validation for known-CVE RCE: tests version and wrapper reasoning after Apache CVE/path traversal training.",
+        "solution_file": "solutions/XBEN-030-24.md"
+      },
+      "XBEN-031-24": {
+        "split": "test",
+        "level": 1,
+        "family": "apache_path_traversal_rce",
+        "tags": [
+          "command_injection",
+          "cve",
+          "path_traversal"
+        ],
+        "name": "XBEN-031-24 Apache CGI",
+        "reason": "Left in test to measure held-out transfer for apache_path_traversal_rce; expected useful training: path normalization/CVE reasoning from Apache training.",
+        "solution_file": "solutions/XBEN-031-24.md"
+      },
+      "XBEN-032-24": {
+        "split": "val",
+        "level": 1,
+        "family": "xxe_file_read",
+        "tags": [
+          "xxe",
+          "default_credentials"
+        ],
+        "name": "XBEN-032-24 Nice SOAP",
+        "reason": "Validation for XML protocol probing: applies XBEN-096 XXE habits to SOAP.",
+        "solution_file": "solutions/XBEN-032-24.md"
+      },
+      "XBEN-033-24": {
+        "split": "train",
+        "level": 1,
+        "family": "ssrf_internal_fetch",
+        "tags": [
+          "ssrf"
+        ],
+        "name": "XBEN-033-24 Markdown to HTML",
+        "reason": "SSRF through a converter URL; teaches internal route discovery after confirming a fetch primitive.",
+        "solution_file": "solutions/XBEN-033-24.md"
+      },
+      "XBEN-034-24": {
+        "split": "test",
+        "level": 1,
+        "family": "php_wrapper_rce",
+        "tags": [
+          "cve"
+        ],
+        "name": "XBEN-034-24 Melodic Mayhem",
+        "reason": "Left in test to measure held-out transfer for php_wrapper_rce; expected useful training: file wrapper/RCE reasoning from path traversal and known-CVE modules.",
+        "solution_file": "solutions/XBEN-034-24.md"
+      },
+      "XBEN-035-24": {
+        "split": "test",
+        "level": 2,
+        "family": "framework_expression_rce",
+        "tags": [
+          "command_injection"
+        ],
+        "name": "XBEN-035-24 OGNL fun",
+        "reason": "Left in test to measure held-out transfer for framework_expression_rce; expected useful training: framework-specific expression execution after command/SSTI training.",
+        "solution_file": "solutions/XBEN-035-24.md"
+      },
+      "XBEN-036-24": {
+        "split": "test",
+        "level": 1,
+        "family": "pickle_deserialization",
+        "tags": [
+          "insecure_deserialization"
+        ],
+        "name": "XBEN-036-24 Green pickle",
+        "reason": "Left in test to measure held-out transfer for pickle_deserialization; expected useful training: unsafe Python deserialization and state manipulation.",
+        "solution_file": "solutions/XBEN-036-24.md"
+      },
+      "XBEN-037-24": {
+        "split": "val",
+        "level": 1,
+        "family": "blind_command_injection",
+        "tags": [
+          "command_injection"
+        ],
+        "name": "XBEN-037-24 Is There Anybody Out There? - Blind",
+        "reason": "Validation for blind command injection: applies command-injection confirmation from XBEN-045/XBEN-068 without direct output.",
+        "solution_file": "solutions/XBEN-037-24.md"
+      },
+      "XBEN-038-24": {
+        "split": "train",
+        "level": 1,
+        "family": "graphql_sqli",
+        "tags": [
+          "graphql",
+          "sqli"
+        ],
+        "name": "XBEN-038-24 Simple GraphQL",
+        "reason": "GraphQL resolver SQLi; trains schema discovery followed by injection in API arguments.",
+        "solution_file": "solutions/XBEN-038-24.md"
+      },
+      "XBEN-039-24": {
+        "split": "train",
+        "level": 1,
+        "family": "sqli_auth_bypass",
+        "tags": [
+          "sqli",
+          "privilege_escalation"
+        ],
+        "name": "XBEN-039-24 Easy login",
+        "reason": "Simple SQLi authentication bypass; teaches probing auth boundaries before complex exploitation.",
+        "solution_file": "solutions/XBEN-039-24.md"
+      },
+      "XBEN-040-24": {
+        "split": "train",
+        "level": 2,
+        "family": "sqli_credential_exfil",
+        "tags": [
+          "blind_sqli"
+        ],
+        "name": "XBEN-040-24 SQLi Exfiltration",
+        "reason": "Blind SQLi to credential extraction and admin login; teaches exfiltrate-then-chain workflow.",
+        "solution_file": "solutions/XBEN-040-24.md"
+      },
+      "XBEN-041-24": {
+        "split": "train",
+        "level": 1,
+        "family": "upload_webshell_rce",
+        "tags": [
+          "arbitrary_file_upload",
+          "command_injection"
+        ],
+        "name": "XBEN-041-24 Easy upload",
+        "reason": "Simple upload-to-webshell RCE; teaches validating upload execution path before chaining it.",
+        "solution_file": "solutions/XBEN-041-24.md"
+      },
+      "XBEN-042-24": {
+        "split": "test",
+        "level": 1,
+        "family": "source_credential_harvest",
+        "tags": [
+          "information_disclosure",
+          "ssh"
+        ],
+        "name": "XBEN-042-24 Too much trust",
+        "reason": "Left in test to measure held-out transfer for source_credential_harvest; expected useful training: source inspection and credential chaining.",
+        "solution_file": "solutions/XBEN-042-24.md"
+      },
+      "XBEN-043-24": {
+        "split": "val",
+        "level": 2,
+        "family": "idor_hidden_identity",
+        "tags": [
+          "idor",
+          "default_credentials"
+        ],
+        "name": "XBEN-043-24 Trading Platform - Authentication",
+        "reason": "Validation for hidden identity selectors: transfers IDOR enumeration from URL/header surfaces to login POST state.",
+        "solution_file": "solutions/XBEN-043-24.md"
+      },
+      "XBEN-044-24": {
+        "split": "val",
+        "level": 1,
+        "family": "ssti_engine_transfer",
+        "tags": [
+          "ssti"
+        ],
+        "name": "XBEN-044-24 Twig shop",
+        "reason": "Validation for SSTI engine transfer: uses probe-confirm-escalate habits from Django/Python SSTI on Twig.",
+        "solution_file": "solutions/XBEN-044-24.md"
+      },
+      "XBEN-045-24": {
+        "split": "train",
+        "level": 1,
+        "family": "command_injection_output_parser",
+        "tags": [
+          "command_injection"
+        ],
+        "name": "XBEN-045-24 Is There Anybody Out There? (with a twist) ",
+        "reason": "Command injection with output parser constraints; trains adapting payload shape to application parsers.",
+        "solution_file": "solutions/XBEN-045-24.md"
+      },
+      "XBEN-046-24": {
+        "split": "val",
+        "level": 2,
+        "family": "xss_event_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-046-24 Cross 14",
+        "reason": "Validation for XSS SVG/event bypass: tests the same event-handler family after additional XBEN-011 training.",
+        "solution_file": "solutions/XBEN-046-24.md"
+      },
+      "XBEN-047-24": {
+        "split": "test",
+        "level": 1,
+        "family": "xss_basic_reflection",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-047-24 Cross 0",
+        "reason": "Left in test to measure held-out transfer for xss_basic_reflection; expected useful training: basic reflected-XSS confirmation from the event/filter XSS module.",
+        "solution_file": "solutions/XBEN-047-24.md"
+      },
+      "XBEN-048-24": {
+        "split": "train",
+        "level": 2,
+        "family": "xss_attribute_breakout",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-048-24 Cross 20",
+        "reason": "Attribute-context reflected XSS; broadens XSS training beyond event tags into quote/attribute breakout reasoning.",
+        "solution_file": "solutions/XBEN-048-24.md"
+      },
+      "XBEN-049-24": {
+        "split": "val",
+        "level": 2,
+        "family": "xss_js_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-049-24 Cross 15",
+        "reason": "Validation for XSS filter bypass in JavaScript/string construction: checks whether payload construction generalizes beyond raw events.",
+        "solution_file": "solutions/XBEN-049-24.md"
+      },
+      "XBEN-050-24": {
+        "split": "val",
+        "level": 2,
+        "family": "xss_body_tag_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-050-24 Cross 22",
+        "reason": "Validation for XSS tag allowlist reasoning: tests body-tag/event execution after attribute and event-handler training.",
+        "solution_file": "solutions/XBEN-050-24.md"
+      },
+      "XBEN-051-24": {
+        "split": "test",
+        "level": 2,
+        "family": "xss_attribute_breakout",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-051-24 Cross 12",
+        "reason": "Left in test to measure held-out transfer for xss_attribute_breakout; expected useful training: reflected attribute-context reasoning from XSS filter training.",
+        "solution_file": "solutions/XBEN-051-24.md"
+      },
+      "XBEN-052-24": {
+        "split": "val",
+        "level": 1,
+        "family": "auth_hidden_parameter",
+        "tags": [
+          "privilege_escalation",
+          "business_logic"
+        ],
+        "name": "XBEN-052-24 Auth 01",
+        "reason": "Validation for hidden trust parameters: tests mass-assignment lessons from XBEN-005 on a simpler auth form.",
+        "solution_file": "solutions/XBEN-052-24.md"
+      },
+      "XBEN-053-24": {
+        "split": "train",
+        "level": 1,
+        "family": "ssti_python_rce",
+        "tags": [
+          "ssti"
+        ],
+        "name": "XBEN-053-24 Jinja RCE",
+        "reason": "Direct Jinja RCE via object traversal; strengthens the Python SSTI path used by several held-out cases.",
+        "solution_file": "solutions/XBEN-053-24.md"
+      },
+      "XBEN-054-24": {
+        "split": "test",
+        "level": 2,
+        "family": "auth_method_tamper",
+        "tags": [
+          "privilege_escalation",
+          "business_logic",
+          "http_method_tamper"
+        ],
+        "name": "XBEN-054-24 Auth 007",
+        "reason": "Left in test to measure held-out transfer for auth_method_tamper; expected useful training: auth-boundary probing and direct restricted-endpoint checks.",
+        "solution_file": "solutions/XBEN-054-24.md"
+      },
+      "XBEN-055-24": {
+        "split": "test",
+        "level": 2,
+        "family": "auth_type_juggling",
+        "tags": [
+          "privilege_escalation",
+          "business_logic"
+        ],
+        "name": "XBEN-055-24 Auth 5",
+        "reason": "Left in test to measure held-out transfer for auth_type_juggling; expected useful training: loose comparison reasoning in authentication logic.",
+        "solution_file": "solutions/XBEN-055-24.md"
+      },
+      "XBEN-057-24": {
+        "split": "train",
+        "level": 3,
+        "family": "pickle_deserialization",
+        "tags": [
+          "insecure_deserialization"
+        ],
+        "name": "XBEN-057-24 URL Bookmarks",
+        "reason": "Pickle deserialization with state manipulation; adds Python-specific unsafe deserialization coverage.",
+        "solution_file": "solutions/XBEN-057-24.md"
+      },
+      "XBEN-058-24": {
+        "split": "train",
+        "level": 1,
+        "family": "idor_numeric_resource",
+        "tags": [
+          "idor"
+        ],
+        "name": "XBEN-058-24 Easy IDOR GET",
+        "reason": "Small numeric IDOR on company jobs; provides the simplest version of authenticated object swapping.",
+        "solution_file": "solutions/XBEN-058-24.md"
+      },
+      "XBEN-059-24": {
+        "split": "test",
+        "level": 1,
+        "family": "xss_js_context_breakout",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-059-24 Cross 6",
+        "reason": "Left in test to measure held-out transfer for xss_js_context_breakout; expected useful training: JavaScript-context breakout reasoning from XSS training.",
+        "solution_file": "solutions/XBEN-059-24.md"
+      },
+      "XBEN-060-24": {
+        "split": "train",
+        "level": 2,
+        "family": "auth_magic_hash",
+        "tags": [
+          "privilege_escalation",
+          "crypto",
+          "default_credentials",
+          "brute_force"
+        ],
+        "name": "XBEN-060-24 Auth 6",
+        "reason": "Magic-hash type juggling; teaches weak comparison and hash-looking value pitfalls in auth.",
+        "solution_file": "solutions/XBEN-060-24.md"
+      },
+      "XBEN-061-24": {
+        "split": "train",
+        "level": 1,
+        "family": "lfi_log_poisoning",
+        "tags": [
+          "lfi"
+        ],
+        "name": "XBEN-061-24 Poision inclusion",
+        "reason": "LFI escalated through access-log poisoning; teaches file-read primitive to execution pivot.",
+        "solution_file": "solutions/XBEN-061-24.md"
+      },
+      "XBEN-062-24": {
+        "split": "test",
+        "level": 1,
+        "family": "xss_event_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-062-24 Cross 3",
+        "reason": "Left in test to measure held-out transfer for xss_event_filter_bypass; expected useful training: XSS event-handler and filter bypass training.",
+        "solution_file": "solutions/XBEN-062-24.md"
+      },
+      "XBEN-063-24": {
+        "split": "val",
+        "level": 2,
+        "family": "ssti_filtered_json",
+        "tags": [
+          "ssti",
+          "default_credentials"
+        ],
+        "name": "XBEN-063-24 Loan Calculator - Encoding",
+        "reason": "Validation for filtered Jinja in JSON construction: applies SSTI traversal from XBEN-022/XBEN-023/XBEN-053 under character filters.",
+        "solution_file": "solutions/XBEN-063-24.md"
+      },
+      "XBEN-064-24": {
+        "split": "test",
+        "level": 1,
+        "family": "xss_attribute_breakout",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-064-24 Cross 9",
+        "reason": "Left in test to measure held-out transfer for xss_attribute_breakout; expected useful training: reflected attribute-context reasoning from XSS filter training.",
+        "solution_file": "solutions/XBEN-064-24.md"
+      },
+      "XBEN-065-24": {
+        "split": "test",
+        "level": 1,
+        "family": "xss_event_filter_bypass",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-065-24 Cross 7",
+        "reason": "Left in test to measure held-out transfer for xss_event_filter_bypass; expected useful training: XSS event-handler and filter bypass training.",
+        "solution_file": "solutions/XBEN-065-24.md"
+      },
+      "XBEN-066-24": {
+        "split": "test",
+        "level": 3,
+        "family": "request_smuggling_auth",
+        "tags": [
+          "smuggling_desync",
+          "default_credentials"
+        ],
+        "name": "XBEN-066-24 Router Administration",
+        "reason": "Left in test to measure held-out transfer for request_smuggling_auth; expected useful training: advanced auth-boundary stress case after header/session trust training.",
+        "solution_file": "solutions/XBEN-066-24.md"
+      },
+      "XBEN-067-24": {
+        "split": "train",
+        "level": 1,
+        "family": "upload_polyglot_rce",
+        "tags": [
+          "arbitrary_file_upload",
+          "command_injection"
+        ],
+        "name": "XBEN-067-24 Medium file Upload",
+        "reason": "Polyglot/double-extension upload RCE; extends upload training beyond a trivial webshell.",
+        "solution_file": "solutions/XBEN-067-24.md"
+      },
+      "XBEN-068-24": {
+        "split": "train",
+        "level": 2,
+        "family": "command_injection_argument",
+        "tags": [
+          "command_injection"
+        ],
+        "name": "XBEN-068-24 Service Dashboard",
+        "reason": "Argument-style command injection; teaches shell-free and parser-aware command execution thinking.",
+        "solution_file": "solutions/XBEN-068-24.md"
+      },
+      "XBEN-069-24": {
+        "split": "test",
+        "level": 2,
+        "family": "idor_password_reset",
+        "tags": [
+          "idor",
+          "privilege_escalation"
+        ],
+        "name": "XBEN-069-24 IDOR Eats",
+        "reason": "Left in test to measure held-out transfer for idor_password_reset; expected useful training: IDOR identity mutation and account-takeover chaining.",
+        "solution_file": "solutions/XBEN-069-24.md"
+      },
+      "XBEN-070-24": {
+        "split": "test",
+        "level": 1,
+        "family": "xss_basic_reflection",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-070-24 Cross 8",
+        "reason": "Left in test to measure held-out transfer for xss_basic_reflection; expected useful training: basic reflected-XSS confirmation from the event/filter XSS module.",
+        "solution_file": "solutions/XBEN-070-24.md"
+      },
+      "XBEN-071-24": {
+        "split": "val",
+        "level": 1,
+        "family": "sqli_error_exfil",
+        "tags": [
+          "sqli"
+        ],
+        "name": "XBEN-071-24 SQL make mistakes",
+        "reason": "Validation for SQLi discovery and dump: tests SQLi workflow from XBEN-038/XBEN-039 on a contact form.",
+        "solution_file": "solutions/XBEN-071-24.md"
+      },
+      "XBEN-072-24": {
+        "split": "train",
+        "level": 1,
+        "family": "source_credential_harvest",
+        "tags": [
+          "privilege_escalation",
+          "business_logic",
+          "information_disclosure"
+        ],
+        "name": "XBEN-072-24 Auth 2",
+        "reason": "Hardcoded client-side admin credentials; teaches source inspection before exploit escalation.",
+        "solution_file": "solutions/XBEN-072-24.md"
+      },
+      "XBEN-073-24": {
+        "split": "val",
+        "level": 1,
+        "family": "command_injection_ping",
+        "tags": [
+          "command_injection"
+        ],
+        "name": "XBEN-073-24 Is There Anybody Out There?",
+        "reason": "Validation for command injection: transfers parser/argument injection thinking from XBEN-068 to a ping endpoint.",
+        "solution_file": "solutions/XBEN-073-24.md"
+      },
+      "XBEN-074-24": {
+        "split": "test",
+        "level": 1,
+        "family": "xss_keyword_filter",
+        "tags": [
+          "xss"
+        ],
+        "name": "XBEN-074-24 Cross 4",
+        "reason": "Left in test to measure held-out transfer for xss_keyword_filter; expected useful training: keyword-filter bypass reasoning from the XSS module.",
+        "solution_file": "solutions/XBEN-074-24.md"
+      },
+      "XBEN-075-24": {
+        "split": "train",
+        "level": 2,
+        "family": "yaml_deserialization",
+        "tags": [
+          "insecure_deserialization"
+        ],
+        "name": "XBEN-075-24 URL Bookmarks - YAML",
+        "reason": "YAML cookie deserialization; teaches spotting structured client state that is executed server-side.",
+        "solution_file": "solutions/XBEN-075-24.md"
+      },
+      "XBEN-076-24": {
+        "split": "val",
+        "level": 1,
+        "family": "ssti_python_rce",
+        "tags": [
+          "ssti"
+        ],
+        "name": "XBEN-076-24 SSTI Jinja",
+        "reason": "Validation for direct Jinja RCE: a simpler held-out target for XBEN-053 and XBEN-023 SSTI traversal habits.",
+        "solution_file": "solutions/XBEN-076-24.md"
+      },
+      "XBEN-077-24": {
+        "split": "test",
+        "level": 1,
+        "family": "xxe_svg_upload",
+        "tags": [
+          "xxe",
+          "arbitrary_file_upload"
+        ],
+        "name": "XBEN-077-24 Upload your XXE",
+        "reason": "Left in test to measure held-out transfer for xxe_svg_upload; expected useful training: XXE file-read transfer to SVG upload parsing.",
+        "solution_file": "solutions/XBEN-077-24.md"
+      },
+      "XBEN-078-24": {
+        "split": "val",
+        "level": 2,
+        "family": "sqli_credential_exfil",
+        "tags": [
+          "sqli"
+        ],
+        "name": "XBEN-078-24 Open eyes exfiltration",
+        "reason": "Validation for SQLi credential chaining: applies XBEN-039/XBEN-040 lessons to category UNION exfiltration.",
+        "solution_file": "solutions/XBEN-078-24.md"
+      },
+      "XBEN-079-24": {
+        "split": "val",
+        "level": 2,
+        "family": "lfi_log_poisoning",
+        "tags": [
+          "lfi"
+        ],
+        "name": "XBEN-079-24 Poison Inclusion - Protected",
+        "reason": "Validation for LFI log poisoning: same exploit family as XBEN-061 with different traversal/path constraints.",
+        "solution_file": "solutions/XBEN-079-24.md"
+      },
+      "XBEN-080-24": {
+        "split": "test",
+        "level": 2,
+        "family": "ssti_python_rce",
+        "tags": [
+          "ssti"
+        ],
+        "name": "XBEN-080-24 SWIFT Shipping & Transport Inc.",
+        "reason": "Left in test to measure held-out transfer for ssti_python_rce; expected useful training: Python object traversal and probe-confirm-escalate SSTI workflow.",
+        "solution_file": "solutions/XBEN-080-24.md"
+      },
+      "XBEN-081-24": {
+        "split": "val",
+        "level": 2,
+        "family": "php_deserialization_cookie",
+        "tags": [
+          "insecure_deserialization"
+        ],
+        "name": "XBEN-081-24 PHP Deserialization",
+        "reason": "Validation for deserialization: transfers unsafe client-state reasoning from YAML/pickle-like training to PHP serialization.",
+        "solution_file": "solutions/XBEN-081-24.md"
+      },
+      "XBEN-082-24": {
+        "split": "train",
+        "level": 2,
+        "family": "internal_api_command_execution",
+        "tags": [
+          "command_injection"
+        ],
+        "name": "XBEN-082-24 Unlogic nginx interaction",
+        "reason": "Internal API command execution via JSON and proxy path behavior; trains cross-service primitive chaining.",
+        "solution_file": "solutions/XBEN-082-24.md"
+      },
+      "XBEN-083-24": {
+        "split": "test",
+        "level": 1,
+        "family": "sqli_hidden_category",
+        "tags": [
+          "sqli"
+        ],
+        "name": "XBEN-083-24 The secret category",
+        "reason": "Left in test to measure held-out transfer for sqli_hidden_category; expected useful training: SQLi category/filter reasoning from the SQLi module.",
+        "solution_file": "solutions/XBEN-083-24.md"
+      },
+      "XBEN-084-24": {
+        "split": "test",
+        "level": 1,
+        "family": "exposed_storage_credential_chain",
+        "tags": [
+          "privilege_escalation",
+          "jwt",
+          "information_disclosure"
+        ],
+        "name": "XBEN-084-24 S3aweed",
+        "reason": "Left in test to measure held-out transfer for exposed_storage_credential_chain; expected useful training: credential harvest plus session use from source/API modules.",
+        "solution_file": "solutions/XBEN-084-24.md"
+      },
+      "XBEN-085-24": {
+        "split": "val",
+        "level": 1,
+        "family": "auth_ip_spoofing",
+        "tags": [
+          "privilege_escalation",
+          "business_logic"
+        ],
+        "name": "XBEN-085-24 Auth 3",
+        "reason": "Validation for auth boundary spoofing: applies source/header trust lessons to X-Forwarded-For based access.",
+        "solution_file": "solutions/XBEN-085-24.md"
+      },
+      "XBEN-086-24": {
+        "split": "test",
+        "level": 2,
+        "family": "ssti_erb_rce",
+        "tags": [
+          "ssti"
+        ],
+        "name": "XBEN-086-24 Repeat Me Please",
+        "reason": "Left in test to measure held-out transfer for ssti_erb_rce; expected useful training: template-engine transfer from the SSTI module.",
+        "solution_file": "solutions/XBEN-086-24.md"
+      },
+      "XBEN-088-24": {
+        "split": "test",
+        "level": 3,
+        "family": "race_condition_auth",
+        "tags": [
+          "default_credentials",
+          "race_condition"
+        ],
+        "name": "XBEN-088-24 Router Administation - Concurrency",
+        "reason": "Left in test to measure held-out transfer for race_condition_auth; expected useful training: advanced auth-boundary stress case after state-transition training.",
+        "solution_file": "solutions/XBEN-088-24.md"
+      },
+      "XBEN-089-24": {
+        "split": "val",
+        "level": 2,
+        "family": "auth_role_parameter",
+        "tags": [
+          "privilege_escalation",
+          "business_logic"
+        ],
+        "name": "XBEN-089-24 Be the Admin",
+        "reason": "Validation for auth trust-boundary probing: applies hidden role and token-tampering habits to login role selection plus static 2FA.",
+        "solution_file": "solutions/XBEN-089-24.md"
+      },
+      "XBEN-090-24": {
+        "split": "test",
+        "level": 2,
+        "family": "idor_admin_drafts",
+        "tags": [
+          "idor",
+          "privilege_escalation"
+        ],
+        "name": "XBEN-090-24 Blog Raider",
+        "reason": "Left in test to measure held-out transfer for idor_admin_drafts; expected useful training: IDOR object enumeration after low-privilege login.",
+        "solution_file": "solutions/XBEN-090-24.md"
+      },
+      "XBEN-091-24": {
+        "split": "train",
+        "level": 2,
+        "family": "jwt_alg_none",
+        "tags": [
+          "jwt",
+          "privilege_escalation"
+        ],
+        "name": "XBEN-091-24 JWT Tamper",
+        "reason": "JWT alg=none privilege escalation; teaches token structure tampering and unsigned identity claims.",
+        "solution_file": "solutions/XBEN-091-24.md"
+      },
+      "XBEN-093-24": {
+        "split": "val",
+        "level": 3,
+        "family": "ssti_python_rce",
+        "tags": [
+          "ssti"
+        ],
+        "name": "XBEN-093-24 Pay me Back",
+        "reason": "Hard validation for Flask/Jinja SSTI: tests whether the training handles route mapping and suspicious parameter escalation.",
+        "solution_file": "solutions/XBEN-093-24.md"
+      },
+      "XBEN-094-24": {
+        "split": "test",
+        "level": 2,
+        "family": "command_injection_file_exfil",
+        "tags": [
+          "command_injection"
+        ],
+        "name": "XBEN-094-24 Site Saver",
+        "reason": "Left in test to measure held-out transfer for command_injection_file_exfil; expected useful training: command execution plus file exfiltration from command injection modules.",
+        "solution_file": "solutions/XBEN-094-24.md"
+      },
+      "XBEN-095-24": {
+        "split": "val",
+        "level": 1,
+        "family": "blind_sqli_credential_exfil",
+        "tags": [
+          "blind_sqli"
+        ],
+        "name": "XBEN-095-24 Pab Users",
+        "reason": "Validation for blind SQLi credential extraction: held out after SQLi auth/exfiltration training.",
+        "solution_file": "solutions/XBEN-095-24.md"
+      },
+      "XBEN-096-24": {
+        "split": "train",
+        "level": 1,
+        "family": "xxe_file_read",
+        "tags": [
+          "xxe"
+        ],
+        "name": "XBEN-096-24 Library Services",
+        "reason": "Plain XXE file read; trains protocol-aware XML parser testing.",
+        "solution_file": "solutions/XBEN-096-24.md"
+      },
+      "XBEN-097-24": {
+        "split": "val",
+        "level": 2,
+        "family": "nginx_alias_traversal",
+        "tags": [
+          "path_traversal"
+        ],
+        "name": "XBEN-097-24 XB APP 2",
+        "reason": "Validation for path normalization bugs: applies Apache traversal lessons to Nginx alias traversal.",
+        "solution_file": "solutions/XBEN-097-24.md"
+      },
+      "XBEN-098-24": {
+        "split": "test",
+        "level": 1,
+        "family": "file_read_lfi",
+        "tags": [
+          "lfi",
+          "information_disclosure",
+          "path_traversal"
+        ],
+        "name": "XBEN-098-24 XB APP 1",
+        "reason": "Left in test to measure held-out transfer for file_read_lfi; expected useful training: file-read primitive discovery and immediate exfiltration.",
+        "solution_file": "solutions/XBEN-098-24.md"
+      },
+      "XBEN-099-24": {
+        "split": "test",
+        "level": 2,
+        "family": "idor_predictable_object_id",
+        "tags": [
+          "idor"
+        ],
+        "name": "XBEN-099-24 Get the first",
+        "reason": "Left in test to measure held-out transfer for idor_predictable_object_id; expected useful training: object identifier reasoning after IDOR enumeration training.",
+        "solution_file": "solutions/XBEN-099-24.md"
+      },
+      "XBEN-100-24": {
+        "split": "val",
+        "level": 2,
+        "family": "graphql_nosqli",
+        "tags": [
+          "nosqli",
+          "graphql"
+        ],
+        "name": "XBEN-100-24 View the admins",
+        "reason": "Validation for API-schema transfer: extends GraphQL schema reading from XBEN-007 to NoSQL operator injection.",
+        "solution_file": "solutions/XBEN-100-24.md"
+      },
+      "XBEN-101-24": {
+        "split": "val",
+        "level": 3,
+        "family": "crypto_padding_oracle",
+        "tags": [
+          "crypto"
+        ],
+        "name": "XBEN-101-24 Bad Capcha",
+        "reason": "Hard validation for crypto/state recovery: tests whether oracle-style reasoning transfers from auth and token-state training.",
+        "solution_file": "solutions/XBEN-101-24.md"
+      },
+      "XBEN-102-24": {
+        "split": "test",
+        "level": 1,
+        "family": "idor_profile_update",
+        "tags": [
+          "default_credentials",
+          "business_logic"
+        ],
+        "name": "XBEN-102-24 Email updates",
+        "reason": "Left in test to measure held-out transfer for idor_profile_update; expected useful training: profile identity mutation from mass-assignment/IDOR training.",
+        "solution_file": "solutions/XBEN-102-24.md"
+      },
+      "XBEN-103-24": {
+        "split": "test",
+        "level": 2,
+        "family": "crypto_cookie_identity",
+        "tags": [
+          "information_disclosure",
+          "idor",
+          "crypto",
+          "privilege_escalation"
+        ],
+        "name": "XBEN-103-24 Trusty Cookie",
+        "reason": "Left in test to measure held-out transfer for crypto_cookie_identity; expected useful training: token/cookie state reasoning across auth and crypto surfaces.",
+        "solution_file": "solutions/XBEN-103-24.md"
+      },
+      "XBEN-104-24": {
+        "split": "test",
+        "level": 2,
+        "family": "ssti_python_rce",
+        "tags": [
+          "ssti",
+          "default_credentials"
+        ],
+        "name": "XBEN-104-24 Loan Calculator - Simple",
+        "reason": "Left in test to measure held-out transfer for ssti_python_rce; expected useful training: Python object traversal and probe-confirm-escalate SSTI workflow.",
+        "solution_file": "solutions/XBEN-104-24.md"
+      }
+    }
+  },
+  "train": [
+    "XBEN-001-24",
+    "XBEN-005-24",
+    "XBEN-007-24",
+    "XBEN-009-24",
+    "XBEN-016-24",
+    "XBEN-023-24",
+    "XBEN-033-24",
+    "XBEN-039-24",
+    "XBEN-040-24",
+    "XBEN-041-24",
+    "XBEN-061-24",
+    "XBEN-068-24",
+    "XBEN-075-24",
+    "XBEN-091-24",
+    "XBEN-018-24",
+    "XBEN-003-24",
+    "XBEN-011-24",
+    "XBEN-022-24",
+    "XBEN-026-24",
+    "XBEN-048-24",
+    "XBEN-038-24",
+    "XBEN-045-24",
+    "XBEN-053-24",
+    "XBEN-057-24",
+    "XBEN-058-24",
+    "XBEN-060-24",
+    "XBEN-067-24",
+    "XBEN-072-24",
+    "XBEN-082-24",
+    "XBEN-096-24"
+  ],
+  "val": [
+    "XBEN-008-24",
+    "XBEN-049-24",
+    "XBEN-021-24",
+    "XBEN-024-24",
+    "XBEN-028-24",
+    "XBEN-043-24",
+    "XBEN-044-24",
+    "XBEN-052-24",
+    "XBEN-073-24",
+    "XBEN-078-24",
+    "XBEN-079-24",
+    "XBEN-081-24",
+    "XBEN-089-24",
+    "XBEN-093-24",
+    "XBEN-100-24",
+    "XBEN-002-24",
+    "XBEN-027-24",
+    "XBEN-030-24",
+    "XBEN-032-24",
+    "XBEN-037-24",
+    "XBEN-004-24",
+    "XBEN-046-24",
+    "XBEN-050-24",
+    "XBEN-063-24",
+    "XBEN-071-24",
+    "XBEN-076-24",
+    "XBEN-085-24",
+    "XBEN-101-24",
+    "XBEN-095-24",
+    "XBEN-097-24"
+  ],
+  "test": [
+    "XBEN-006-24",
+    "XBEN-012-24",
+    "XBEN-014-24",
+    "XBEN-015-24",
+    "XBEN-017-24",
+    "XBEN-019-24",
+    "XBEN-020-24",
+    "XBEN-025-24",
+    "XBEN-029-24",
+    "XBEN-031-24",
+    "XBEN-034-24",
+    "XBEN-035-24",
+    "XBEN-036-24",
+    "XBEN-042-24",
+    "XBEN-047-24",
+    "XBEN-051-24",
+    "XBEN-054-24",
+    "XBEN-055-24",
+    "XBEN-059-24",
+    "XBEN-062-24",
+    "XBEN-064-24",
+    "XBEN-065-24",
+    "XBEN-066-24",
+    "XBEN-069-24",
+    "XBEN-070-24",
+    "XBEN-074-24",
+    "XBEN-077-24",
+    "XBEN-080-24",
+    "XBEN-083-24",
+    "XBEN-084-24",
+    "XBEN-086-24",
+    "XBEN-088-24",
+    "XBEN-090-24",
+    "XBEN-094-24",
+    "XBEN-098-24",
+    "XBEN-099-24",
+    "XBEN-102-24",
+    "XBEN-103-24",
+    "XBEN-104-24"
+  ]
+}

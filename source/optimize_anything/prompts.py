@@ -60,13 +60,19 @@ Also check for semantically equivalent entries in the blocklist (not just exact 
 ## What each file is for
 
 ### `prompt.md`
-Universal truths injected before every run: agent identity, operational methodology, hard constraints, scope boundaries. NOT: tool lists, step-by-step procedures, target-specific facts, anything only relevant sometimes.
+The CTF agent's main prompt body, injected into `.opencode/agents/ctf-agent.md` before every run. This is the place for the agent persona/role, mission, final-answer contract, global operating loop, tool-use discipline, skill-use policy, step-budget behavior, pivot/stop rules, and hard constraints.
+
+Edit `prompt.md` when failures show the agent's *global behavior* is wrong across tasks: it forgets to call relevant skills, loops instead of pivoting, spends the budget poorly, stops before finding the flag, ignores evidence, reports poorly, or needs a better universal recon/exploitation decision loop.
+
+Do NOT put technique-specific exploit walkthroughs, payload catalogs, benchmark facts, long tool recipes, or narrow lessons here.
 
 ### `AGENTS.md`
-Cross-target empirical knowledge: attack patterns that work repeatedly, recon heuristics validated in practice, dead ends that waste time. Keep under 30 lines. No target-specific state.
+Compact always-on memory/rules that OpenCode loads into context for every run. Use it only for short cross-target empirical heuristics, recurring gotchas, and dead ends that are broadly useful enough to always spend context on.
+
+Keep it concise (ideally under 20 lines, hard cap 30). Each entry should be one sentence or one tight bullet. Do NOT put persona, the main operating loop, long procedures, payload lists, or target-specific facts here. If a lesson needs multiple steps or examples, make or update a skill instead.
 
 ### `.opencode/skills/<name>/SKILL.md`
-On-demand procedural knowledge — loaded only when the agent decides it needs a technique. Body teaches principles and reasoning, not rigid step lists.
+On-demand procedural playbooks loaded through the `skill` tool when the agent decides it needs a technique. Use skills for vulnerability-specific methodology, payload families, escalation paths, decision trees, tool commands, and examples. Body should teach principles and reasoning plus concrete procedures.
 
 **Required frontmatter** — OpenCode silently ignores skills that are missing either field:
 ```yaml
@@ -186,10 +192,16 @@ Also check for semantically equivalent entries in the blocklist (not just exact 
 ## What each file is for
 
 ### `prompt.md`
-Universal truths injected before every run: agent identity, operational methodology, hard constraints, scope boundaries. NOT: tool lists, step-by-step procedures, target-specific facts, anything only relevant sometimes.
+The CTF agent's main prompt body, injected into `.opencode/agents/ctf-agent.md` before every run. This is the place for the agent persona/role, mission, final-answer contract, global operating loop, tool-use discipline, skill-use policy, step-budget behavior, pivot/stop rules, and hard constraints.
+
+Edit `prompt.md` when failures show the agent's *global behavior* is wrong across tasks: it forgets to use available guidance, loops instead of pivoting, spends the budget poorly, stops before finding the flag, ignores evidence, reports poorly, or needs a better universal recon/exploitation decision loop.
+
+Because `evolution=prompt` cannot create or edit skill files, put compact technique-selection policy in `prompt.md` only when it changes global behavior. Do NOT put long exploit walkthroughs, payload catalogs, benchmark facts, or narrow lessons here.
 
 ### `AGENTS.md`
-Cross-target empirical knowledge: attack patterns that work repeatedly, recon heuristics validated in practice, dead ends that waste time. Keep under 30 lines. No target-specific state.
+Compact always-on memory/rules that OpenCode loads into context for every run. Use it only for short cross-target empirical heuristics, recurring gotchas, and dead ends that are broadly useful enough to always spend context on.
+
+Keep it concise (ideally under 20 lines, hard cap 30). Each entry should be one sentence or one tight bullet. Do NOT put persona, the main operating loop, long procedures, payload lists, or target-specific facts here. If a lesson needs multiple steps or examples, compress it into a short heuristic or move the global behavior part to `prompt.md`.
 
 ## Patch operations
 
@@ -285,7 +297,9 @@ Express all changes as patch objects. Rules:
 - Do not blindly union both candidates' files — that produces bloat, not improvement.
 - If both candidates have a skill covering the same attack class, propose a `replace` patch that merges the best of both into a single skill.
 - If B has a skill A lacks that covers a distinct attack class, propose an `append` patch to create it.
-- If B's prompt or AGENTS.md contains a principle A is missing, propose an `insert_after` or `append` patch.
+- If B has a better global persona, operating loop, tool/skill policy, budget discipline, pivot rule, or final-reporting behavior, patch `prompt.md`.
+- If B has a short always-on empirical heuristic or recurring gotcha that is worth spending context on every run, patch `AGENTS.md`.
+- Do not move long procedures or payload catalogs into `prompt.md` or `AGENTS.md`; put them in skills, or leave them out if no skill patch is appropriate.
 - Apply the same hygiene rules as the reflector: prune what does not generalize, prefer editing over adding, keep AGENTS.md under 30 lines.
 - Keep each skill body under 500 lines. If the resulting skill count would exceed 8, consolidate skills that share a root technique into one before adding new ones.
 
@@ -392,7 +406,9 @@ Express all changes as patch objects. Rules:
 - A is the base — it is the stronger overall candidate. B contributes targeted additions.
 - Import from B only what fills a concrete gap in A's coverage or corrects a known weakness.
 - Do not blindly union both candidates' files — that produces bloat, not improvement.
-- If B's prompt or AGENTS.md contains a principle A is missing, propose an `insert_after` or `append` patch.
+- If B has a better global persona, operating loop, tool-use policy, budget discipline, pivot rule, or final-reporting behavior, patch `prompt.md`.
+- If B has a short always-on empirical heuristic or recurring gotcha that is worth spending context on every run, patch `AGENTS.md`.
+- Do not move long procedures, payload catalogs, or benchmark-specific facts into either file.
 - Apply the same hygiene rules as the reflector: prune what does not generalize, prefer editing over adding, keep AGENTS.md under 30 lines.
 
 **Less is more.** The goal is a focused synthesis, not a superset. Every token competes for the agent's attention.

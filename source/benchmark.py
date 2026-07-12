@@ -1,7 +1,9 @@
 """Benchmark lifecycle management — start, stop, port discovery for XBOW challenges."""
 
+import random
 import re
 import subprocess
+import time
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -12,31 +14,52 @@ _HOST_PORT_RE = re.compile(r"0\.0\.0\.0:(\d+)->\d+/tcp")
 
 _active_benchmarks: set[str] = set()
 
+# `make run` fails transiently under concurrent load (Docker network-pool
+# exhaustion, a DB container missing its health-check window) — these clear
+# up within seconds once other concurrent benchmarks finish and release
+# their resources, so retry before giving up.
+_START_RETRIES = 4
+_START_RETRY_DELAY_RANGE = (8, 15)  # seconds, randomized to avoid thundering herd
+
 
 def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) -> int:
     """Start a benchmark's Docker containers and return the host port.
 
     Runs `make run` (which builds + docker compose up --wait), then discovers
-    the dynamically assigned host port via `docker ps`.
+    the dynamically assigned host port via `docker ps`. Retries on failure —
+    concurrent workers routinely contend for Docker's network-address pool.
     """
     bench_dir = benchmarks_dir / benchmark_id
-    result = subprocess.run(
-        ["make", "run"],
-        cwd=bench_dir,
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"`make run` failed for {benchmark_id} (exit {result.returncode})\n"
-            f"cwd: {bench_dir}\n"
-            f"--- stdout ---\n{result.stdout}\n"
-            f"--- stderr ---\n{result.stderr}"
+    result = None
+    for attempt in range(_START_RETRIES):
+        result = subprocess.run(
+            ["make", "run"],
+            cwd=bench_dir,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
+        if result.returncode == 0:
+            _active_benchmarks.add(benchmark_id)
+            return find_host_port(benchmark_id)
 
-    _active_benchmarks.add(benchmark_id)
-    return find_host_port(benchmark_id)
+        if attempt < _START_RETRIES - 1:
+            # Clear any half-started stack before retrying so it doesn't
+            # collide with the next attempt (stale network/container names).
+            subprocess.run(
+                ["docker", "compose", "down", "--remove-orphans"],
+                cwd=bench_dir,
+                capture_output=True,
+                timeout=60,
+            )
+            time.sleep(random.uniform(*_START_RETRY_DELAY_RANGE))
+
+    raise RuntimeError(
+        f"`make run` failed for {benchmark_id} after {_START_RETRIES} attempts (exit {result.returncode})\n"
+        f"cwd: {bench_dir}\n"
+        f"--- stdout ---\n{result.stdout}\n"
+        f"--- stderr ---\n{result.stderr}"
+    )
 
 
 def stop_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) -> None:

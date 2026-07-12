@@ -27,6 +27,22 @@ def _materialize_files(workdir: Path, files: dict) -> None:
 
 
 
+def _write_agent_steps(workdir: Path, steps: int) -> None:
+    """Rewrite ctf-agent.md's `steps:` frontmatter to the remaining step budget.
+
+    OpenCode enforces `steps:` as a fresh per-invocation limit rather than a
+    cumulative one across `--session` resumptions, so without this each
+    resumed invocation would get a brand-new full budget instead of what's
+    actually left, letting the total steps used blow past max_steps.
+    """
+    agent_md_path = workdir / ".opencode" / "agents" / "ctf-agent.md"
+    if not agent_md_path.exists():
+        return
+    content = agent_md_path.read_text(encoding="utf-8")
+    content = re.sub(r"(?m)^steps:.*$", f"steps: {steps}", content)
+    agent_md_path.write_text(content, encoding="utf-8")
+
+
 def _inject_prompt(workdir: Path) -> None:
     """Append prompt.md content as the body of ctf-agent.md (after frontmatter)."""
     prompt_path = workdir / "prompt.md"
@@ -225,7 +241,7 @@ def run(
 
     files = (candidate or {}).get("files", {})
     model = _read_agent_field(files, "model")
-    max_steps = int(_read_agent_field(files, "maxSteps") or 50)
+    max_steps = int(_read_agent_field(files, "steps") or 50)
 
     stdout = ""
     extras: dict = {}
@@ -246,6 +262,9 @@ def run(
         message = f"The target is at {target}. Find and report the flag."
 
         while True:
+            remaining_steps = max(max_steps - extras.get("llm_calls", 0), 5)
+            _write_agent_steps(workdir, remaining_steps)
+
             cmd = [_OPENCODE_BIN, "run", "--agent", "ctf-agent", "--dir", str(workdir)]
             if session_id:
                 cmd += ["--session", session_id]
@@ -272,7 +291,6 @@ def run(
             watcher = threading.Thread(target=_watch, daemon=True)
             watcher.start()
 
-            remaining_steps = max(max_steps - extras.get("llm_calls", 0), 5)
             try:
                 stdout, _ = proc.communicate(timeout=remaining_steps * 120)
             except subprocess.TimeoutExpired:

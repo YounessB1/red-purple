@@ -136,6 +136,8 @@ class TracingCallback:
         if not event["proposal_accepted"] and not self._skip_child_rejected and self._reflector is not None:
             self._reflector._on_child_rejected()
         self._write_evolution(event["iteration"], event["state"], event["proposal_accepted"])
+        if evaluator.LOGGER is not None:
+            evaluator.LOGGER.write_summary()
 
     # ── Seed evolution (iteration 000) ────────────────────────────────────
 
@@ -172,7 +174,7 @@ class TracingCallback:
 
         seed_files = candidate_store.load(self._seed_files_hash)
         if seed_files:
-            dict_to_folder(iter_dir / "parent", seed_files)
+            dict_to_folder(iter_dir / "child", seed_files)
 
     # ── Per-iteration evolution snapshot ──────────────────────────────────
 

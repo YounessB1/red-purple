@@ -1,21 +1,15 @@
-[tool.poetry]
+[project]
 name = "red-purple"
 version = "0.1.0"
 description = "Red-Purple: Offensive + Iterative Learning AI Agent Framework"
-authors = ["YounessB1"]
-packages = [{include = "source"}]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27.0",
+    "litellm>=1.81.1",
+    "python-dotenv>=1.0.0",
+    "gepa[full]",
+    "pyyaml>=6.0",
+]
 
-[tool.poetry.scripts]
-red-purple = "main:main"
-
-[tool.poetry.dependencies]
-python = "^3.12"
-httpx = "^0.27.0"
-litellm = ">=1.81.1"
-python-dotenv = "^1.0.0"
-gepa = {version = "*", extras = ["full"]}
-pyyaml = "^6.0"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv]
+package = false

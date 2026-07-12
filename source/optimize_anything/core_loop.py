@@ -88,7 +88,7 @@ def run(
     """
     # ── Extract runtime params from each section ───────────────────────
     agent_model    = ctf_agent["md"]["model"]
-    agent_max_iter = ctf_agent["md"]["maxSteps"]
+    agent_max_iter = ctf_agent["md"]["steps"]
 
     judge_model     = scorer["md"].get("model", "")
     gt              = scorer.get("gt", False)

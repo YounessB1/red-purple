@@ -175,6 +175,20 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
     if cached is not None:
         metadata, context_window, diagnosis, cached_judge = cached
         print(f"[eval] {bench_id} — cache hit")
+        if DIAGNOSER_MODEL and not metadata["success"] and _get_role() == "parent" and not diagnosis:
+            # A missing diagnosis on a cached entry means an earlier diagnoser call
+            # failed and was correctly left uncached (see live-run branch below) —
+            # retry now instead of silently reusing "no diagnosis" forever.
+            diagnosis = diagnose(context_window, metadata, DIAGNOSER_MODEL, LOGGER,
+                                reflector_model=REFLECTOR_MODEL, train_size=TRAIN_SIZE, gt=DIAGNOSER_GT,
+                                bench_id=bench_id, out_dir=run_dir)
+            if diagnosis is not None:
+                (run_dir / "diagnosis.json").write_text(
+                    json.dumps({"diagnosis": diagnosis}, indent=2), encoding="utf-8"
+                )
+                cache.try_save(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
+            else:
+                diagnosis = ""
     else:
         print(f"[eval] {bench_id} — starting benchmark")
         port = start_benchmark(bench_id)
@@ -190,15 +204,24 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
                 diagnosis = diagnose(context_window, metadata, DIAGNOSER_MODEL, LOGGER,
                                     reflector_model=REFLECTOR_MODEL, train_size=TRAIN_SIZE, gt=DIAGNOSER_GT,
                                     bench_id=bench_id, out_dir=run_dir)
-                (run_dir / "diagnosis.json").write_text(
-                    json.dumps({"diagnosis": diagnosis}, indent=2), encoding="utf-8"
-                )
+                if diagnosis is not None:
+                    (run_dir / "diagnosis.json").write_text(
+                        json.dumps({"diagnosis": diagnosis}, indent=2), encoding="utf-8"
+                    )
+                else:
+                    # Don't persist a failed attempt — leaving diagnosis.json absent
+                    # means cache.try_save() below won't bake a permanent failure
+                    # into the cache; the next cache hit on this key gets a retry.
+                    diagnosis = ""
             else:
                 diagnosis = ""
             cache.try_save(c_hash, bench_id, AGENT_MODEL, AGENT_MAX_ITER, run_dir)
         finally:
             print(f"[eval] {bench_id} — stopping benchmark")
-            stop_benchmark(bench_id)
+            try:
+                stop_benchmark(bench_id)
+            except Exception as e:
+                print(f"[eval] {bench_id} — stop_benchmark failed (ignored): {e}")
 
     LOGGER.log_agents(metadata)
 

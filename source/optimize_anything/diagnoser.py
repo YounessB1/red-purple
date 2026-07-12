@@ -30,7 +30,7 @@ def diagnose(
     gt: bool = False,
     bench_id: str = "",
     out_dir: Path | None = None,
-) -> str:
+) -> str | None:
     bench_id = bench_id or metadata.get("benchmark_id", "unknown")
     workdir = _ROOT / "tmp" / f"diagnoser_{bench_id}_{uuid.uuid4().hex[:8]}"
     workdir.mkdir(parents=True, exist_ok=True)
@@ -72,11 +72,11 @@ def diagnose(
             if attempt + 1 < _MAX_RETRIES:
                 print(f"[diagnoser]{gt_tag} {bench_id} — retrying ({attempt + 2}/{_MAX_RETRIES})")
 
-        print(f"[diagnoser]{gt_tag} {bench_id} — all attempts failed, using fallback")
-        return f"Diagnosis unavailable for {bench_id} (agent produced no output after {_MAX_RETRIES} attempts)."
+        print(f"[diagnoser]{gt_tag} {bench_id} — all attempts failed, giving up")
+        return None
     except Exception as e:
         print(f"[diagnoser] {bench_id} — unexpected error: {e}")
-        return f"Diagnosis unavailable for {bench_id} (error: {e})."
+        return None
     finally:
         try:
             logger.log_diagnoser(input_tokens, output_tokens, cost)

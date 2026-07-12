@@ -1,7 +1,7 @@
 ---
 description: "CTF penetration testing agent"
 mode: primary
-model: "openrouter/google/gemma-4-31b-it"
+model: "polito/gemma-4-31b"
 temperature: 0.2
 steps: 50
 permission:

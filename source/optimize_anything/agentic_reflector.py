@@ -82,6 +82,7 @@ class AgenticReflector:
         self._total_iterations = total_iterations
         self._evolution = evolution
         self._last_applied_patches: list[dict] = []
+        self._last_patch_report: dict = {}
         self._merged_pairs: set[frozenset] = set()
 
     def _find_merge_candidates(self, pool: list[dict], current_hash: str) -> tuple[str, str] | None:
@@ -140,6 +141,7 @@ class AgenticReflector:
         if not isinstance(patches, list) or not patches:
             log("[agentic-reflector] No valid patches proposed — agent files unchanged")
             self._last_applied_patches = []
+            self._last_patch_report = {"budget": None, "proposed": 0, "selected": 0, "report": [], "dropped_by_budget": []}
             return current_files
 
         if self._evolution == "prompt":
@@ -153,6 +155,7 @@ class AgenticReflector:
         log(f"[agentic-reflector] {len(patches)} patches proposed, edit budget={budget}")
 
         selected = patches[:budget]
+        dropped = patches[budget:]
 
         new_files, report = apply_patches(current_files, selected)
         self._last_applied_patches = selected
@@ -161,14 +164,48 @@ class AgenticReflector:
         skipped = sum(1 for r in report if r["status"].startswith("skipped"))
         log(f"[agentic-reflector] applied={applied} skipped={skipped} (of {len(selected)} selected, {len(patches)} proposed)")
 
+        dropped_by_budget = [
+            {"index": budget + i, "op": p.get("op", ""), "file": p.get("file", "")}
+            for i, p in enumerate(dropped)
+        ]
+        self._last_patch_report = {
+            "budget": budget, "proposed": len(patches), "selected": len(selected),
+            "report": report, "dropped_by_budget": dropped_by_budget,
+        }
         (iter_dir / "patch_report.json").write_text(
-            json.dumps(
-                {"budget": budget, "proposed": len(patches), "selected": len(selected), "report": report},
-                indent=2, ensure_ascii=False,
-            ),
+            json.dumps(self._last_patch_report, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
         return new_files
+
+    def _build_changes_summary(self) -> str:
+        """Deterministic human-readable changelog built from the real patch_report.json
+        outcome, instead of the reflector's own narrative — which is written *before*
+        the edit-budget clip runs and can describe changes that never actually landed
+        (confirmed: it once narrated creating a skill file that never existed in the
+        child). Format matches Logger.log_reflector_changes()'s parsing: "- " bullets
+        become `changes`, "file: description" lines become `changes_summary`.
+        """
+        pr = self._last_patch_report
+        if not pr or not pr.get("proposed"):
+            return "- No valid patches proposed — agent files unchanged"
+
+        bullets: list[str] = []
+        summary: list[str] = []
+        for entry in pr["report"]:
+            file_key, op, status = entry["file"], entry["op"], entry["status"]
+            if status.startswith("applied"):
+                bullets.append(f"- Applied {op} to {file_key}")
+                summary.append(f"{file_key}: applied ({op})")
+            else:
+                bullets.append(f"- NOT applied to {file_key} ({op}, {status})")
+                summary.append(f"{file_key}: not applied — {status} ({op})")
+        for entry in pr.get("dropped_by_budget", []):
+            file_key, op = entry["file"], entry["op"]
+            bullets.append(f"- NOT applied to {file_key} ({op}, exceeded edit budget)")
+            summary.append(f"{file_key}: not applied — exceeded edit budget ({op})")
+
+        return "\n".join(bullets) + "\n\n" + "\n".join(summary)
 
     def _run_merge(self, hash_a: str, hash_b: str, iter_dir: Path) -> None:
         # workspace/agent/ already restored to hash_a (current parent) by __call__
@@ -253,9 +290,6 @@ class AgenticReflector:
         candidate_store.store(new_hash, new_files)
         dict_to_folder(iter_dir / "child", new_files)
 
-        changes_path = _WORKSPACE / "reflector_changes.md"
-        changes = changes_path.read_text(encoding="utf-8").strip() if changes_path.exists() else ""
-        if changes:
-            self._logger.log_reflector_changes(changes)
+        self._logger.log_reflector_changes(self._build_changes_summary())
 
         return f"```\n{new_hash}\n```"

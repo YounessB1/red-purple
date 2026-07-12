@@ -21,7 +21,7 @@ permission:
   task: "deny"
   todowrite: "deny"
   question: "deny"
-  doom_loop: "deny"
+  doom_loop: "allow"
   lsp: "deny"
   external_directory: "deny"
   skill: "deny"
@@ -81,13 +81,19 @@ Also check for semantically equivalent entries in the blocklist (not just exact 
 ## What each file is for
 
 ### `prompt.md`
-Universal truths injected before every run: agent identity, operational methodology, hard constraints, scope boundaries. NOT: tool lists, step-by-step procedures, target-specific facts, anything only relevant sometimes.
+The CTF agent's main prompt body, injected into `.opencode/agents/ctf-agent.md` before every run. This is the place for the agent persona/role, mission, final-answer contract, global operating loop, tool-use discipline, skill-use policy, step-budget behavior, pivot/stop rules, and hard constraints.
+
+Edit `prompt.md` when failures show the agent's *global behavior* is wrong across tasks: it forgets to call relevant skills, loops instead of pivoting, spends the budget poorly, stops before finding the flag, ignores evidence, reports poorly, or needs a better universal recon/exploitation decision loop.
+
+Do NOT put technique-specific exploit walkthroughs, payload catalogs, benchmark facts, long tool recipes, or narrow lessons here.
 
 ### `AGENTS.md`
-Cross-target empirical knowledge: attack patterns that work repeatedly, recon heuristics validated in practice, dead ends that waste time. Keep under 30 lines. No target-specific state.
+Compact always-on memory/rules that OpenCode loads into context for every run. Use it only for short cross-target empirical heuristics, recurring gotchas, and dead ends that are broadly useful enough to always spend context on.
+
+Keep it concise (ideally under 20 lines, hard cap 30). Each entry should be one sentence or one tight bullet. Do NOT put persona, the main operating loop, long procedures, payload lists, or target-specific facts here. If a lesson needs multiple steps or examples, make or update a skill instead.
 
 ### `.opencode/skills/<name>/SKILL.md`
-On-demand procedural knowledge — loaded only when the agent decides it needs a technique. Body teaches principles and reasoning, not rigid step lists.
+On-demand procedural playbooks loaded through the `skill` tool when the agent decides it needs a technique. Use skills for vulnerability-specific methodology, payload families, escalation paths, decision trees, tool commands, and examples. Body should teach principles and reasoning plus concrete procedures.
 
 **Required frontmatter** — OpenCode silently ignores skills that are missing either field:
 ```yaml

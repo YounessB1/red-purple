@@ -1,18 +1,17 @@
-# Single experiment: flat dict (original format), or a list for sequential runs.
-# Both formats are supported by main.py.
+# Sequential experiments. main.py runs each top-level config in order.
 
-- experiment_name: PoC_basics_Gemma4_new
+- experiment_name: split30
   experiments_dir: experiments
-  splits: PoC_basics
-  max_calls: 150
-  workers: 3
+  splits: split30
+  max_calls: 4000
+  workers: 20
 
   # ── CTF Agent ─────────────────────────────────────────────────────────
   ctf_agent:
     # .md  → source/seed/.opencode/agents/ctf-agent.md
     md:
-      model: openrouter/google/gemma-4-31b-it
-      maxSteps: 50
+      model: polito/gemma-4-31b
+      steps: 50
     # runtime
     server_url: http://localhost:8000
 
@@ -49,8 +48,8 @@
     val_minibatch_size: null
     # edit budget / learning rate
     evolution: skill      # prompt | skill — controls what reflector/merger may change
-    edit_budget: 4        # max patches applied per reflector step (max_lr)
-    min_edit_budget: 1    # floor for cosine/linear decay
+    edit_budget: 5        # max patches applied per reflector step (max_lr)
+    min_edit_budget: 2    # floor for cosine/linear decay
     lr_scheduler: cosine  # constant | linear | cosine
 
   # ── Merger ────────────────────────────────────────────────────────────

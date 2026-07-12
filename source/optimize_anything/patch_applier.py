@@ -28,7 +28,10 @@ def apply_patches(files: dict[str, str], patches: list[dict]) -> tuple[dict[str,
             text = updated.get(file_key, "")
 
             if op == "append":
-                updated[file_key] = text.rstrip() + "\n\n" + content + "\n"
+                if text:
+                    updated[file_key] = text.rstrip() + "\n\n" + content + "\n"
+                else:
+                    updated[file_key] = content.rstrip() + "\n"
                 entry["status"] = "applied_append"
 
             elif op == "insert_after":
@@ -39,7 +42,10 @@ def apply_patches(files: dict[str, str], patches: list[dict]) -> tuple[dict[str,
                     updated[file_key] = text[:insert_at] + "\n" + content + "\n" + text[insert_at:]
                     entry["status"] = "applied_insert_after"
                 else:
-                    updated[file_key] = text.rstrip() + "\n\n" + content + "\n"
+                    if text:
+                        updated[file_key] = text.rstrip() + "\n\n" + content + "\n"
+                    else:
+                        updated[file_key] = content.rstrip() + "\n"
                     entry["status"] = "applied_insert_after_fallback_append"
 
             elif op == "replace":

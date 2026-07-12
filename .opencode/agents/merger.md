@@ -72,7 +72,9 @@ Express all changes as patch objects. Rules:
 - Do not blindly union both candidates' files — that produces bloat, not improvement.
 - If both candidates have a skill covering the same attack class, propose a `replace` patch that merges the best of both into a single skill.
 - If B has a skill A lacks that covers a distinct attack class, propose an `append` patch to create it.
-- If B's prompt or AGENTS.md contains a principle A is missing, propose an `insert_after` or `append` patch.
+- If B has a better global persona, operating loop, tool/skill policy, budget discipline, pivot rule, or final-reporting behavior, patch `prompt.md`.
+- If B has a short always-on empirical heuristic or recurring gotcha that is worth spending context on every run, patch `AGENTS.md`.
+- Do not move long procedures or payload catalogs into `prompt.md` or `AGENTS.md`; put them in skills, or leave them out if no skill patch is appropriate.
 - Apply the same hygiene rules as the reflector: prune what does not generalize, prefer editing over adding, keep AGENTS.md under 30 lines.
 - Keep each skill body under 500 lines. If the resulting skill count would exceed 8, consolidate skills that share a root technique into one before adding new ones.
 

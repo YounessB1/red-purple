@@ -572,7 +572,7 @@ function renderInfoSidebar() {
   const reflModel     = cfg.reflector?.md?.model      || cfg.reflection_lm;
   const diagModel     = cfg.diagnoser?.md?.model      || cfg.diagnoser_model;
   const judgeModel    = cfg.scorer?.md?.model         || cfg.judge_model;
-  const maxSteps      = cfg.ctf_agent?.md?.maxSteps   || cfg.agent_max_iter;
+  const maxSteps      = cfg.ctf_agent?.md?.steps       || cfg.ctf_agent?.md?.maxSteps || cfg.agent_max_iter;
   const trainBatch    = cfg.reflector?.train_minibatch_size ?? cfg.train_minibatch_size;
   const valBatch      = cfg.reflector?.val_minibatch_size   ?? cfg.val_minibatch_size;
   const gt            = cfg.scorer?.gt                ?? cfg.gt;
