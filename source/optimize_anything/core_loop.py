@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from gepa import optimize
+from gepa.strategies.candidate_selector import ParetoCandidateSelector
 
 from source.optimize_anything import cache, candidate_store, evaluator
 from source.optimize_anything.adapter import RedPurpleAdapter, SubsetValPolicy
@@ -15,7 +16,6 @@ from source.optimize_anything.callbacks import TracingCallback
 from source.optimize_anything.dataset import load_dataset
 from source.optimize_anything.logger import Logger
 from source.optimize_anything.agentic_reflector import AgenticReflector
-from source.optimize_anything.candidate_selector import ValAvgProportionalSelector
 from source.optimize_anything.utils import candidate_hash, dict_to_folder, folder_to_dict, next_experiment_dir
 from source.optimize_anything.prompts import REFLECTOR_SKILL, REFLECTOR_PROMPT, MERGER_SKILL, MERGER_PROMPT
 
@@ -201,7 +201,7 @@ def run(
             valset=val,
             adapter=adapter,
             reflection_lm=lm,
-            candidate_selection_strategy=ValAvgProportionalSelector(),
+            candidate_selection_strategy=ParetoCandidateSelector(rng=None),
             reflection_minibatch_size=train_minibatch,
             reflection_prompt_template=None,
             max_metric_calls=max_calls,

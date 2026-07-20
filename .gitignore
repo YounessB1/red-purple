@@ -21,3 +21,4 @@ tmp/
 tests/runner/output/
 xbow report.md
 CLAUDE.md
+ARCHITECTURE.md

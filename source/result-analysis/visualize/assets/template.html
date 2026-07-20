@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>__NAME__ — Prompt Explorer</title>
+<style>
+__STYLES__
+</style>
+</head>
+<body>
+<div id="hdr">
+  <button class="panel-toggle-btn" id="toggle-sidebar" title="Show/hide iterations panel">☰</button>
+  <h1 id="exp-name"></h1>
+  <span class="hint">Click an iteration to view reflector changes and prompt diff</span>
+  <button class="panel-toggle-btn" id="toggle-info-sidebar" title="Show/hide config &amp; summary panel" style="margin-left:auto;">ⓘ</button>
+</div>
+<div id="body">
+  <div id="sidebar"></div>
+  <div class="resizer" id="resizer-left"></div>
+  <div id="main">
+    <div id="placeholder">← Select an iteration</div>
+    <div id="content" style="display:none"></div>
+  </div>
+  <div class="resizer" id="resizer-right"></div>
+  <div id="info-sidebar"></div>
+</div>
+<script>
+__SCRIPTS__
+</script>
+</body>
+</html>
