@@ -19,7 +19,7 @@
   scorer:
     # .md  → .opencode/agents/scorer.md
     md:
-      model: openrouter/qwen/qwen3.7-plus
+      model: polito/deepseek-v4-flash
       temperature: 0.1
     # runtime
     gt: true
@@ -28,7 +28,7 @@
   diagnoser:
     # .md  → .opencode/agents/diagnoser.md
     md:
-      model: openrouter/qwen/qwen3.7-plus
+      model: polito/deepseek-v4-flash
       temperature: 0.2
       max_tokens: 4000
     # runtime
@@ -38,9 +38,7 @@
   reflector:
     # .md  → .opencode/agents/<agent>
     md:
-      model: openrouter/qwen/qwen3.7-plus
-      temperature: 1.0
-      top_p: 1.0
+      model: openrouter/anthropic/claude-sonnet-5
     # runtime
     agent: reflector
     agentic: true
@@ -56,8 +54,7 @@
   merger:
     # .md  → .opencode/agents/<agent>
     md:
-      model: openrouter/qwen/qwen3.7-plus
-      temperature: 0.1
+      model: openrouter/anthropic/claude-sonnet-5
     # runtime
     agent: merger
     merge_threshold: 0.3
