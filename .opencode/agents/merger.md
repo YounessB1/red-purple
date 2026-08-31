@@ -1,6 +1,6 @@
 ---
 description: "Synthesizes two complementary agent candidates into one improved agent"
-model: "openrouter/qwen/qwen3.7-plus"
+model: "openrouter/anthropic/claude-sonnet-5"
 temperature: 0.1
 steps: 30
 options:

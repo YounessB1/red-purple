@@ -1,6 +1,6 @@
 ---
 description: "CTF judge — scores partial agent progress 0.0–0.9"
-model: "openrouter/qwen/qwen3.7-plus"
+model: "polito/gemma-4-31b"
 temperature: 0.1
 steps: 30
 options:

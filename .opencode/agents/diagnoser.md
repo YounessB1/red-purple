@@ -1,6 +1,6 @@
 ---
 description: "CTF failure diagnoser — compact failure analysis for the reflector"
-model: "openrouter/qwen/qwen3.7-plus"
+model: "polito/gemma-4-31b"
 temperature: 0.2
 steps: 30
 options:

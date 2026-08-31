@@ -1,9 +1,9 @@
 # Sequential experiments. main.py runs each top-level config in order.
 
-- experiment_name: split30
+- experiment_name: split30_nothink
   experiments_dir: experiments
   splits: split30
-  max_calls: 4000
+  max_calls: 5000
   workers: 20
 
   # ── CTF Agent ─────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@
   scorer:
     # .md  → .opencode/agents/scorer.md
     md:
-      model: polito/deepseek-v4-flash
+      model: polito/gemma-4-31b
       temperature: 0.1
     # runtime
     gt: true
@@ -28,7 +28,7 @@
   diagnoser:
     # .md  → .opencode/agents/diagnoser.md
     md:
-      model: polito/deepseek-v4-flash
+      model: polito/gemma-4-31b
       temperature: 0.2
       max_tokens: 4000
     # runtime

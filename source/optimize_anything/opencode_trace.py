@@ -13,6 +13,16 @@ _LOCAL_BIN = _REPO_ROOT / "node_modules" / ".bin" / "opencode"
 # is on PATH, so the project always runs against the declared opencode version.
 OPENCODE_BIN: str = str(_LOCAL_BIN) if _LOCAL_BIN.exists() else (shutil.which("opencode") or "opencode")
 
+# scorer/diagnoser run in scratch workdirs (tmp/scorer_*, tmp/diagnoser_*) that only
+# ever get context_window.json/metadata.json/ground_truth.md written into them.
+# Provider config (baseURL/apiKey/model registry) for on-prem models like polito/*
+# lives only in source/seed/opencode.json, which otherwise only reaches the CTF
+# agent's own materialized workdir (via runner.py). Without it here, any polito/*
+# model configured as scorer/diagnoser fails every call with a generic server
+# error and silently falls back to a fake score/empty diagnosis. Copying it in
+# is harmless when the configured model doesn't need it (openrouter/* etc.).
+_SEED_OPENCODE_JSON = _REPO_ROOT / "source" / "seed" / "opencode.json"
+
 
 def trace_opencode_session(workdir: Path) -> tuple[int, int, float, list]:
     """Return (input_tokens, output_tokens, cost, steps) for the most recent session in workdir."""
@@ -77,6 +87,8 @@ def run_opencode_agent(
     timed_out=True means the subprocess hit the timeout; caller handles retry.
     """
     lbl = label or agent
+    if _SEED_OPENCODE_JSON.exists():
+        shutil.copy(_SEED_OPENCODE_JSON, workdir / "opencode.json")
     try:
         proc = subprocess.run(
             [OPENCODE_BIN, "run", "--agent", agent, "--model", model, "--dir", str(workdir), prompt],

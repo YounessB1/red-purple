@@ -1,6 +1,6 @@
 ---
 description: "Analyzes CTF agent iteration artifacts and proposes structured patches to the agent strategy"
-model: "openrouter/qwen/qwen3.7-plus"
+model: "openrouter/anthropic/claude-sonnet-5"
 temperature: 1.0
 top_p: 1.0
 steps: 30

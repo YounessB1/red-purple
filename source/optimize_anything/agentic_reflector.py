@@ -45,7 +45,12 @@ def _compute_overlap(val_a: dict, val_b: dict) -> float:
 def _load_json(path: Path, default):
     if path.exists():
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            # strict=False: the reflector/merger LLM occasionally mixes literal
+            # and escaped newlines within a multi-line skill-content string —
+            # still valid intent, just not RFC-strict JSON. Without this, a
+            # single stray control character silently discards an entire
+            # (often good) patch set as "no valid patches proposed".
+            return json.loads(path.read_text(encoding="utf-8"), strict=False)
         except Exception:
             pass
     return default

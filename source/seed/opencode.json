@@ -13,6 +13,7 @@
         "qwen3-235b":       { "name": "Qwen3 235B Instruct-2507 (AWQ)", "limit": { "context": 262144, "output": 8192 } },
         "mistral-small-4":  { "name": "Mistral Small 4 (text)", "limit": { "context": 327680, "output": 8192 } },
         "gemma-4-31b":      { "name": "Gemma 4 31B", "limit": { "context": 262144, "output": 8192 } },
+        "deepseek-v4":      { "name": "DeepSeek V4", "limit": { "context": 262144, "output": 8192 } },
         "gpt-oss-120b":     { "name": "GPT-OSS 120B", "limit": { "context": 131072, "output": 8192 }, "options": { "reasoning_effort": "low" } },
         "gpt-oss-20b":      { "name": "GPT-OSS 20B", "limit": { "context": 131072, "output": 8192 }, "options": { "reasoning_effort": "low" } }
       }

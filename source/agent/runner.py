@@ -53,8 +53,7 @@ def _inject_prompt(workdir: Path) -> None:
     agent_md = agent_md_path.read_text(encoding="utf-8")
     parts = agent_md.split("---", 2)
     if len(parts) >= 3:
-        # Gemma has no thinking enabled by default; this tag turns it on.
-        agent_md_path.write_text(f"---{parts[1]}---\n\n<|think|>\n{prompt_content}", encoding="utf-8")
+        agent_md_path.write_text(f"---{parts[1]}---\n\n{prompt_content}", encoding="utf-8")
 
 
 
