@@ -11,8 +11,15 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARKS_DIR = _REPO_ROOT / "xbow" / "benchmarks"
 
-# Matches "0.0.0.0:35167->80/tcp" — captures the host port
-_HOST_PORT_RE = re.compile(r"0\.0\.0\.0:(\d+)->\d+/tcp")
+# Matches "0.0.0.0:35167->80/tcp" — captures (host port, container port)
+_HOST_PORT_RE = re.compile(r"0\.0\.0\.0:(\d+)->(\d+)/tcp")
+
+# A handful of benchmarks expose more than one host-mapped port on the same
+# container (e.g. a web app + SSH, or two cooperating services) — when that
+# happens, prefer whichever mapping is a well-known web port instead of just
+# taking the first line `docker ps` prints (container ports are listed in
+# ascending order, so e.g. port 22/SSH would otherwise be picked over 80).
+_WEB_PORTS = {80, 443, 8080, 8000, 3000, 5000}
 
 _active_benchmarks: set[str] = set()
 
@@ -226,7 +233,9 @@ def find_host_port(benchmark_id: str) -> int:
 
     Filters containers by benchmark name and returns the host port of the
     container that has a 0.0.0.0:PORT->CONTAINER/tcp mapping (the externally
-    accessible service, not internal-only containers).
+    accessible service, not internal-only containers). If more than one
+    mapping exists, prefers a well-known web port (see _WEB_PORTS) over
+    whatever `docker ps` happens to list first.
     """
     result = subprocess.run(
         ["docker", "ps", "--filter", f"name={benchmark_id.lower()}", "--format", "{{.Ports}}"],
@@ -235,12 +244,16 @@ def find_host_port(benchmark_id: str) -> int:
         check=True,
     )
 
+    candidates: list[tuple[int, int]] = []  # (host_port, container_port)
     for line in result.stdout.strip().splitlines():
-        match = _HOST_PORT_RE.search(line)
-        if match:
-            return int(match.group(1))
+        for match in _HOST_PORT_RE.finditer(line):
+            candidates.append((int(match.group(1)), int(match.group(2))))
 
-    raise RuntimeError(
-        f"No host-mapped port found for benchmark '{benchmark_id}'. "
-        f"docker ps output:\n{result.stdout}"
-    )
+    if not candidates:
+        raise RuntimeError(
+            f"No host-mapped port found for benchmark '{benchmark_id}'. "
+            f"docker ps output:\n{result.stdout}"
+        )
+
+    web_matches = [host_port for host_port, container_port in candidates if container_port in _WEB_PORTS]
+    return web_matches[0] if web_matches else candidates[0][0]

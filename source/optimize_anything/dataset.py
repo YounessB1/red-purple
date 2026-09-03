@@ -22,6 +22,17 @@ def load_dataset(
     return train, val
 
 
+def load_test_split(
+    splits_name: str = "splits",
+    test_split: str = "test",
+    benchmarks_dir: Path = BENCHMARKS_DIR,
+) -> list[dict]:
+    """Load <splits_name>.json and return the held-out test set as example dicts."""
+    splits_path = _DATASET_DIR / f"{splits_name}.json"
+    splits = json.loads(splits_path.read_text(encoding="utf-8"))
+    return [_make_example(bid, benchmarks_dir, test_split) for bid in splits[test_split]]
+
+
 def _make_example(benchmark_id: str, benchmarks_dir: Path, split: str) -> dict:
     """Create a single dataset example from benchmark metadata."""
     meta_path = benchmarks_dir / benchmark_id / "benchmark.json"

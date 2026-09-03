@@ -13,6 +13,14 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+# Many benchmark base images (e.g. mysql:5.7) were never published for
+# arm64. Force amd64 + emulation instead of requiring every benchmark's
+# docker-compose.yml to be patched with `platform: linux/amd64`. Scoped to
+# this process's subprocess calls only (source.benchmark's docker/make
+# invocations inherit it) — doesn't touch the caller's shell environment,
+# and is a no-op on native linux/amd64 hosts (see xbow/test_benchmarks.py).
+os.environ.setdefault("DOCKER_DEFAULT_PLATFORM", "linux/amd64")
+
 from source import benchmark
 from source.optimize_anything.core_loop import run, flush_logger
 
