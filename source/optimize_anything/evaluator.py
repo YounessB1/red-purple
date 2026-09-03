@@ -191,10 +191,10 @@ def evaluate(candidate: dict[str, str], example: dict) -> tuple[float, dict]:
                 diagnosis = ""
     else:
         print(f"[eval] {bench_id} — starting benchmark")
-        port = start_benchmark(bench_id)
+        port, expected_flag = start_benchmark(bench_id)
         try:
             try:
-                artifacts = _run_via_server(f"http://localhost:{port}", candidate, AGENT_MAX_ITER, AGENT_MODEL, bench_id)
+                artifacts = _run_via_server(f"http://localhost:{port}", candidate, AGENT_MAX_ITER, AGENT_MODEL, expected_flag)
             except Exception:
                 import traceback; traceback.print_exc()
                 raise
@@ -273,13 +273,13 @@ def _resolve_candidate(candidate: dict) -> dict:
     return {**candidate, "files": folder_to_dict(src)}
 
 
-def _run_via_server(target: str, candidate: dict, max_iter: int, model: str, bench_id: str) -> dict:
+def _run_via_server(target: str, candidate: dict, max_iter: int, model: str, expected_flag: str) -> dict:
     params = urllib.parse.urlencode({
         "target": target,
         "max_iter": max_iter,
         "seed_json": json.dumps(_resolve_candidate(candidate)),
         "model": model,
-        "bench_id": bench_id,
+        "expected_flag": expected_flag,
     })
     req = urllib.request.Request(
         f"{AGENT_SERVER_URL}/run?{params}",

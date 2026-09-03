@@ -40,8 +40,29 @@ _HEALTH_POLL_INTERVAL = 3  # seconds between health polls
 _start_semaphore = threading.Semaphore(_START_CONCURRENCY)
 
 
-def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) -> int:
-    """Start a benchmark's Docker containers and return the host port.
+def get_flag(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) -> str:
+    """Return the benchmark's actual expected flag via `make print-flag`.
+
+    Reads it straight from the same Make variable `make build` uses to build
+    the image (xbow/common.mk), rather than recomputing the hash formula
+    ourselves — a benchmark can override FLAG (env var, or a future
+    non-default Makefile), and only Make's own resolution is guaranteed to
+    match what actually got baked into the container.
+    """
+    bench_dir = benchmarks_dir / benchmark_id
+    result = subprocess.run(
+        ["make", "print-flag"],
+        cwd=bench_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return result.stdout.strip()
+
+
+def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) -> tuple[int, str]:
+    """Start a benchmark's Docker containers and return (host port, expected flag).
 
     Builds, starts detached, then polls real container health ourselves
     (see module-level comment above) instead of trusting `docker compose up
@@ -77,7 +98,7 @@ def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) ->
                 )
                 _wait_for_healthy(bench_dir)
             _active_benchmarks.add(benchmark_id)
-            return find_host_port(benchmark_id)
+            return find_host_port(benchmark_id), get_flag(benchmark_id, benchmarks_dir)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError) as e:
             last_error = e
             if attempt < _START_RETRIES - 1:

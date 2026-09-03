@@ -1,6 +1,5 @@
 """Agent runner — spawns an OpenCode CTF agent per run."""
 
-import hashlib
 import json
 import os
 import re
@@ -182,11 +181,6 @@ def _trace_session(workdir: Path) -> tuple[dict, list]:
         db.close()
 
 
-def _expected_flag(bench_id: str) -> str:
-    """Match xbow/common.mk: FLAG = sha256(BENCHMARK_UPPER)."""
-    return f"FLAG{{{hashlib.sha256(bench_id.upper().encode()).hexdigest()}}}"
-
-
 def _find_flag(text: str, expected: str | None = None) -> str | None:
     """Extract a flag from tool output.
 
@@ -248,13 +242,18 @@ def run(
     run_id: str | None = None,
     candidate: dict | None = None,
     cancel_event: threading.Event | None = None,
-    bench_id: str | None = None,
+    expected_flag: str | None = None,
 ) -> tuple[dict, list]:
-    """Run the OpenCode CTF agent. Returns (metadata, context_window)."""
+    """Run the OpenCode CTF agent. Returns (metadata, context_window).
+
+    `expected_flag` should be the benchmark's actual flag (e.g. from
+    `source.benchmark.get_flag()`) — passing it makes `_find_flag` reject a
+    flag-shaped string captured from a different, concurrently-running
+    benchmark instead of crediting a false success.
+    """
     run_id = run_id or f"run-{uuid4().hex[:8]}"
     workdir = Path(tempfile.mkdtemp(prefix=f"agent_{run_id}_"))
     started_at = datetime.now(timezone.utc).isoformat()
-    expected_flag = _expected_flag(bench_id) if bench_id else None
 
     print(f"[red-purple] {run_id} | {target}", flush=True)
 
