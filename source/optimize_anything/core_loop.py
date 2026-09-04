@@ -1,6 +1,7 @@
 """Core GEPA optimization loop — all logic lives here."""
 
 import json
+import random
 import re
 import shutil
 from pathlib import Path
@@ -194,6 +195,14 @@ def run(
 
     logger.start_logger()
 
+    # A fixed seed=0 made both the train-minibatch order (EpochShuffledBatchSampler)
+    # and the Pareto parent selection (ParetoCandidateSelector's own internal
+    # random.Random(0) fallback) identical across every run. Draw a fresh
+    # per-run seed from OS entropy instead, and log it so any specific run can
+    # still be replayed later if needed.
+    run_seed = random.SystemRandom().randint(0, 2**31 - 1)
+    print(f"[red-purple] run_seed={run_seed} (pass to reproduce this exact run)")
+
     try:
         result = optimize(
             seed_candidate=seed,
@@ -201,7 +210,7 @@ def run(
             valset=val,
             adapter=adapter,
             reflection_lm=lm,
-            candidate_selection_strategy=ParetoCandidateSelector(rng=None),
+            candidate_selection_strategy=ParetoCandidateSelector(rng=random.Random(run_seed)),
             reflection_minibatch_size=train_minibatch,
             reflection_prompt_template=None,
             max_metric_calls=max_calls,
@@ -211,7 +220,7 @@ def run(
             skip_perfect_score=True,
             use_cloudpickle=True,
             cache_evaluation=True,
-            seed=0,
+            seed=run_seed,
         )
     finally:
         logger.stop_logger()

@@ -1,6 +1,13 @@
 function renderSidebar() {
   const sb = document.getElementById('sidebar');
   sb.innerHTML = '';
+  if (DATA.test_summary && Object.keys(DATA.test_summary).length) {
+    const testCard = document.createElement('div');
+    testCard.className = 'card' + (selId === 'test' ? ' sel' : '');
+    testCard.innerHTML = `<div class="card-top"><span class="card-num">Test</span></div>`;
+    testCard.addEventListener('click', () => { selId = 'test'; renderSidebar(); renderMain(); });
+    sb.appendChild(testCard);
+  }
   const evoCard = document.createElement('div');
   evoCard.className = 'card' + (selId === 'evolution' ? ' sel' : '');
   evoCard.innerHTML = `<div class="card-top"><span class="card-num">Evolution</span></div>`;
@@ -25,6 +32,7 @@ function renderMain() {
   const ct = document.getElementById('content');
   if (selId === null) { ph.style.display = 'flex'; ct.style.display = 'none'; return; }
   ph.style.display = 'none'; ct.style.display = 'block';
+  if (selId === 'test') { renderTestResults(ct); return; }
   if (selId === 'evolution') { renderEvolutionView(ct); return; }
   renderIteration(ct, DATA.iterations.find(x => x.id === selId));
 }

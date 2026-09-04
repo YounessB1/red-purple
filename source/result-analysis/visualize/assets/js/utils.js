@@ -16,3 +16,19 @@ function pad(n) { return String(n).padStart(3, '0'); }
 function esc(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+// Candidate indices that appear in at least one iteration's pool.json snapshot.
+// pool.json only ever contains candidates that were on the Pareto front for at
+// least one benchmark at some point (see callbacks.py's _write_pool — dominated
+// candidates are filtered out with `if idx not in candidate_pareto: continue`).
+// A candidate that never appears in any pool snapshot was pruned (dominated) at
+// some point during the run.
+function computeEverPooledSet() {
+  const everPooled = new Set();
+  for (const it of DATA.iterations) {
+    if (!it.pool_json) continue;
+    const pool = JSON.parse(it.pool_json);
+    for (const c of pool.candidates) everPooled.add(c.idx);
+  }
+  return everPooled;
+}

@@ -396,17 +396,18 @@ function renderPrunedTreeAxis({ keep, parentOf, depth, cross, rankOf, valOf, ori
     boxes += `<g class="${isTopN ? 'sh-tree-leaf' : 'sh-tree-node'}">
       <rect x="${boxX.toFixed(1)}" y="${boxY.toFixed(1)}" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="4"></rect>
       <text x="${(boxX + boxW / 2).toFixed(1)}" y="${(boxY + boxH / 2 + fontSize * 0.35).toFixed(1)}" text-anchor="middle" style="font-size:${fontSize.toFixed(1)}px">${esc(label_)}</text>
-      <title>${idx === 0 ? 'Seed' : `#${idx}`}${v != null ? ` · val_avg ${v.toFixed(2)}` : ''}${isTopN ? '' : ' · not in top-N (kept: on path to a top-N candidate)'}</title>
+      <title>${idx === 0 ? 'Seed' : `#${idx}`}${v != null ? ` · val_avg ${v.toFixed(2)}` : ''}${isTopN ? '' : ' · not selected (kept: on path to a selected candidate)'}</title>
     </g>`;
   }
   return edges + boxes;
 }
 
-// Same idea as renderOneSimilarityHeatmap, but for a fixed top-N-by-val_avg
-// subset instead of every tree leaf: membership is by val_avg (the top N
-// scores), but row/column *order* follows the pruned ancestry tree's
-// depth-first structure, not the ranking — see buildTopNPrunedTree for why.
-function renderTopNSimilarityHeatmap(container, sim, { idPrefix, title, captionSuffix, topN, getViewState, setViewState }) {
+// Same idea as renderOneSimilarityHeatmap, but for an arbitrary subset of
+// candidates (top-N-by-val_avg, or "still in the pool", etc.) instead of
+// every tree leaf: membership comes from `selectRows`, but row/column
+// *order* always follows the pruned ancestry tree's depth-first structure,
+// not the ranking — see buildTopNPrunedTree for why.
+function renderSubsetSimilarityHeatmap(container, sim, { idPrefix, title, captionSuffix, selectRows, subsetCaption, getViewState, setViewState }) {
   if (!sim || !sim.available) {
     const reason = sim && sim.reason ? esc(sim.reason) : 'Similarity data not available.';
     container.innerHTML = `<h3 class="sh-title">${esc(title)}</h3><div class="no-diff">${reason}</div>`;
@@ -414,11 +415,7 @@ function renderTopNSimilarityHeatmap(container, sim, { idPrefix, title, captionS
   }
 
   const simByIdx = new Map(sim.items.map((it, i) => [it.idx, i]));
-  const topRows = buildValidationSeries()
-    .filter(r => simByIdx.has(r.idx))
-    .slice()
-    .sort((a, b) => b.val - a.val)
-    .slice(0, topN);
+  const topRows = selectRows(buildValidationSeries().filter(r => simByIdx.has(r.idx)));
   const n = topRows.length;
   if (n < 2) {
     container.innerHTML = `<h3 class="sh-title">${esc(title)}</h3><div class="no-diff">Not enough scored candidates yet to compare.</div>`;
@@ -540,7 +537,7 @@ function renderTopNSimilarityHeatmap(container, sim, { idPrefix, title, captionS
       </div>
       <div class="sh-tooltip" id="${idPrefix}-tooltip"></div>
     </div>
-    <div class="sh-caption">top ${n} candidates by val_avg (membership only — rows/columns are NOT ranked by score, they follow the tree's depth-first order so its edges never cross the grid) · embedding model: ${esc(sim.model)}, mean-centered · ${captionSuffix} · pruned ancestry tree: the real seed-to-candidate path for every top-${n} candidate is kept in full (intermediate ancestors included, plain boxes), any branch that never reaches a top-${n} candidate is dropped entirely · excludes static boilerplate (agent wrapper, provider config) · diverging orange/blue scale, fixed -1.00 to 1.00, actual values, no rescaling · this run's observed range was ${simMin.toFixed(2)}–${simMax.toFixed(2)}</div>`;
+    <div class="sh-caption">${subsetCaption(n)} (membership only — rows/columns are NOT ranked by score, they follow the tree's depth-first order so its edges never cross the grid) · embedding model: ${esc(sim.model)}, mean-centered · ${captionSuffix} · pruned ancestry tree: the real seed-to-candidate path for every selected candidate is kept in full (intermediate ancestors included, plain boxes), any branch that never reaches a selected candidate is dropped entirely · excludes static boilerplate (agent wrapper, provider config) · diverging orange/blue scale, fixed -1.00 to 1.00, actual values, no rescaling · this run's observed range was ${simMin.toFixed(2)}–${simMax.toFixed(2)}</div>`;
 
   setupPanZoom({
     viewportId: `${idPrefix}-viewport`, stageId: `${idPrefix}-stage`,
@@ -574,16 +571,46 @@ function renderTopNSimilarityHeatmap(container, sim, { idPrefix, title, captionS
   });
 }
 
-// Four independent instances stacked one under the other: the two tree-based
-// leaf heatmaps (file×file and whole-candidate), then the same two similarity
-// computations again but restricted to the top-10 by val_avg with no tree —
+// Six independent instances stacked one under the other: first the two
+// tree-based heatmaps restricted to candidates still in the pool (i.e. ever
+// kept on the val-set Pareto front, see utils.js::computeEverPooledSet —
+// this is the same green/red split the Validation Performance histogram and
+// the Tree tab use, just applied here as a subset filter), then the two
+// full-leaf heatmaps (file×file and whole-candidate), then the same two
+// similarity computations again but restricted to the top-10 by val_avg —
 // same underlying data, different subset/layout for each pair.
 function renderSimilarityHeatmap(el) {
   el.innerHTML = `
-    <div id="sh-new-wrap"></div>
+    <div id="sh-pool-wrap"></div>
+    <div id="sh-pool-legacy-wrap" class="sh-section-divider"></div>
+    <div id="sh-new-wrap" class="sh-section-divider"></div>
     <div id="sh-legacy-wrap" class="sh-section-divider"></div>
     <div id="sh-top10-wrap" class="sh-section-divider"></div>
     <div id="sh-top10-legacy-wrap" class="sh-section-divider"></div>`;
+
+  const everPooled = computeEverPooledSet();
+  const selectPooled = rows => rows.filter(r => everPooled.has(r.idx)).slice().sort((a, b) => b.val - a.val);
+  const poolCaption = n => `${n} candidates still in the pool (kept on the val-set Pareto front at some point — see Validation Performance)`;
+
+  renderSubsetSimilarityHeatmap(el.querySelector('#sh-pool-wrap'), DATA.similarity, {
+    idPrefix: 'shpool',
+    title: 'File × File Similarity Heatmap — In Pool',
+    captionSuffix: 'one-to-one file matching (prompt.md, AGENTS.md, each skills/*/SKILL.md embedded separately, not pooled)',
+    selectRows: selectPooled,
+    subsetCaption: poolCaption,
+    getViewState: () => simPoolViewState,
+    setViewState: s => { simPoolViewState = s; },
+  });
+
+  renderSubsetSimilarityHeatmap(el.querySelector('#sh-pool-legacy-wrap'), DATA.similarity_legacy, {
+    idPrefix: 'shpoolleg',
+    title: 'Whole-Candidate Similarity Heatmap — In Pool',
+    captionSuffix: 'whole candidate pooled into a single vector, truncated at ~8k tokens (24,000 chars)',
+    selectRows: selectPooled,
+    subsetCaption: poolCaption,
+    getViewState: () => simPoolLegacyViewState,
+    setViewState: s => { simPoolLegacyViewState = s; },
+  });
 
   renderOneSimilarityHeatmap(el.querySelector('#sh-new-wrap'), DATA.similarity, {
     idPrefix: 'sh',
@@ -601,20 +628,25 @@ function renderSimilarityHeatmap(el) {
     setViewState: s => { simLegacyViewState = s; },
   });
 
-  renderTopNSimilarityHeatmap(el.querySelector('#sh-top10-wrap'), DATA.similarity, {
+  const selectTop10 = rows => rows.slice().sort((a, b) => b.val - a.val).slice(0, 10);
+  const top10Caption = n => `top ${n} candidates by val_avg`;
+
+  renderSubsetSimilarityHeatmap(el.querySelector('#sh-top10-wrap'), DATA.similarity, {
     idPrefix: 'shtop',
     title: 'File × File Top-10 Similarity Heatmap',
     captionSuffix: 'one-to-one file matching (prompt.md, AGENTS.md, each skills/*/SKILL.md embedded separately, not pooled)',
-    topN: 10,
+    selectRows: selectTop10,
+    subsetCaption: top10Caption,
     getViewState: () => simTop10ViewState,
     setViewState: s => { simTop10ViewState = s; },
   });
 
-  renderTopNSimilarityHeatmap(el.querySelector('#sh-top10-legacy-wrap'), DATA.similarity_legacy, {
+  renderSubsetSimilarityHeatmap(el.querySelector('#sh-top10-legacy-wrap'), DATA.similarity_legacy, {
     idPrefix: 'shtopleg',
     title: 'Whole-Candidate Top-10 Similarity Heatmap',
     captionSuffix: 'whole candidate pooled into a single vector, truncated at ~8k tokens (24,000 chars)',
-    topN: 10,
+    selectRows: selectTop10,
+    subsetCaption: top10Caption,
     getViewState: () => simTop10LegacyViewState,
     setViewState: s => { simTop10LegacyViewState = s; },
   });

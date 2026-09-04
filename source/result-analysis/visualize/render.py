@@ -9,6 +9,7 @@ _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 _JS_FILES = [
     "utils.js",
     "diff.js",
+    "test_results.js",
     "evolution.js",
     "validation_chart.js",
     "similarity_heatmap.js",

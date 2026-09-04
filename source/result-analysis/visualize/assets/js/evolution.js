@@ -44,20 +44,15 @@ function buildEvolutionTree() {
   }
 
   // Fill val_avg from pool.json (for candidates that appear there), and track
-  // pool membership: pool.json only ever contains candidates that were on the
-  // Pareto front for at least one benchmark at some point (see callbacks.py's
-  // _write_pool — dominated candidates are filtered out with `if idx not in
-  // candidate_pareto: continue`). A candidate that never appears in any pool
-  // snapshot was pruned (dominated) at some point during the run.
-  const everPooled = new Set();
+  // pool membership via the shared everPooled helper (utils.js).
   for (const it of DATA.iterations) {
     if (!it.pool_json) continue;
     const pool = JSON.parse(it.pool_json);
     for (const c of pool.candidates) {
-      everPooled.add(c.idx);
       if (nodes[c.idx] && c.val_avg != null) nodes[c.idx].val_avg = c.val_avg;
     }
   }
+  const everPooled = computeEverPooledSet();
   // Fill val_avg from child_val in evolution.json (for candidates absent from pool)
   for (const it of DATA.iterations) {
     if (it.status !== 'accepted') continue;

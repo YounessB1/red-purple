@@ -6,6 +6,8 @@ let treeExpanded = new Set();
 let treeViewState = null;
 let simViewState = null;
 let simLegacyViewState = null;
+let simPoolViewState = null;
+let simPoolLegacyViewState = null;
 let simTop10ViewState = null;
 let simTop10LegacyViewState = null;
 
