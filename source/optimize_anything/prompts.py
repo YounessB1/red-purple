@@ -47,9 +47,7 @@ Read `workspace/agent/prompt.md`, `workspace/agent/AGENTS.md`.
 Then list `workspace/agent/.opencode/skills/` and read each `SKILL.md` found. You need the full content of existing skills before proposing any changes to them.
 
 **Step 4 — Identify and rank improvements**
-The goal is never to patch one benchmark. Find the underlying principle behind recurring failures and encode it in a way that transfers to unseen challenges.
-
-Ask: if the agent faced a different challenge with the same root cause, would this improvement still help? If the answer is "only for this specific benchmark," abstract up until the answer is yes.
+**GENERALIZATION IS THE ONLY GOAL** — you're training the agent for unseen future challenges, not fixing today's benchmarks. For every candidate patch, ask: *would this still help on a different challenge with the same root cause?* If only "this specific benchmark," abstract it up or drop it. E.g. "On XBEN-014, POST `/api/user/142`" → "resources fetched by a numeric/predictable ID are often IDOR-able — try adjacent IDs." Applies to skills too (below): a skill explaining one benchmark's exact payload is a walkthrough, not a skill.
 
 Once you have a list of candidate improvements, rank them by expected impact before writing any patches. The highest-impact change goes first — the optimizer applies only the first N patches and discards the rest.
 
@@ -72,7 +70,7 @@ Compact always-on memory/rules that OpenCode loads into context for every run. U
 Keep it concise (ideally under 20 lines, hard cap 30). Each entry should be one sentence or one tight bullet. Do NOT put persona, the main operating loop, long procedures, payload lists, or target-specific facts here. If a lesson needs multiple steps or examples, make or update a skill instead.
 
 ### `.opencode/skills/<name>/SKILL.md`
-On-demand procedural playbooks loaded through the `skill` tool when the agent decides it needs a technique. Use skills for vulnerability-specific methodology, payload families, escalation paths, decision trees, tool commands, and examples. Body should teach principles and reasoning plus concrete procedures.
+On-demand procedural playbooks loaded through the `skill` tool when the agent decides it needs a technique. Use skills for vulnerability-specific methodology, payload families, escalation paths, decision trees, tool commands, and examples. Body should teach principles and reasoning plus concrete procedures — the technique class, not the one instance you happened to see fail.
 
 **Required frontmatter** — OpenCode silently ignores skills that are missing either field:
 ```yaml
@@ -82,7 +80,11 @@ description: <one or two sentences the agent reads to decide whether to load thi
 ---
 ```
 
-Before proposing any skill change: list existing skills. If one covers the same attack class, update it instead. Merge skills sharing a root technique. Delete skills too narrow to generalize. Consolidate if more than 8 skills exist.
+**`description` is the most important line in a skill** — it's the only thing the agent reads to decide whether to load the body, so a vague or benchmark-flavored one makes the skill invisible (or wastes budget if it over-promises). State the observable *symptom/trigger* ("parameter feeds a query and errors/times out on quotes"), not just the vuln name ("SQLi"), broad enough to match unseen challenges but not so broad it overlaps another skill's trigger.
+
+Existing skills' `name`/`description` are patchable too, not just their body — `replace` the frontmatter in place when a description is stale, vague, or mis-scoped. This is often higher-impact than editing the body. (The file path can't be moved by patch ops, so a rename only changes the frontmatter `name:` — that's fine, OpenCode reads the frontmatter, not the directory.)
+
+Before proposing any skill change: list existing skills and read each description as if you were the agent deciding whether to load it — would it fire on the failures you just saw? If not, that's itself a bug to fix. If one skill covers the same attack class, update it (body and/or description) instead of creating a near-duplicate. Merge skills sharing a root technique or an overlapping description. Delete skills too narrow to generalize. Consolidate if more than 8 skills exist.
 
 ## Patch operations
 
@@ -179,9 +181,7 @@ Complete every benchmark in this pass before moving on. Do not read agent files 
 Read `workspace/agent/prompt.md` and `workspace/agent/AGENTS.md`.
 
 **Step 4 — Identify and rank improvements**
-The goal is never to patch one benchmark. Find the underlying principle behind recurring failures and encode it in a way that transfers to unseen challenges.
-
-Ask: if the agent faced a different challenge with the same root cause, would this improvement still help? If the answer is "only for this specific benchmark," abstract up until the answer is yes.
+**GENERALIZATION IS THE ONLY GOAL** — you're training the agent for unseen future challenges, not fixing today's benchmarks. For every candidate patch, ask: *would this still help on a different challenge with the same root cause?* If only "this specific benchmark," abstract it up or drop it. E.g. "On XBEN-014, POST `/api/user/142`" → "resources fetched by a numeric/predictable ID are often IDOR-able — try adjacent IDs."
 
 Once you have a list of candidate improvements, rank them by expected impact before writing any patches. The highest-impact change goes first — the optimizer applies only the first N patches and discards the rest.
 
