@@ -1,10 +1,10 @@
 # Sequential experiments. main.py runs each top-level config in order.
 
-- experiment_name: split30_nothink
+- experiment_name: split30_2_think
   experiments_dir: experiments
   splits: split30
   max_calls: 5000
-  workers: 20
+  workers: 10
 
   # ── CTF Agent ─────────────────────────────────────────────────────────
   ctf_agent:

@@ -4,6 +4,13 @@ FROM kalilinux/kali-rolling
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# http.kali.org's redirector currently points package downloads (not the
+# signed index) at a mirror whose TLS cert this base image's CA bundle
+# won't validate. Package integrity is still enforced by APT's GPG-signed
+# Release file + per-package hashes, independent of transport, so disabling
+# peer verification here just unblocks the broken mirror.
+RUN echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99insecure-mirror-workaround
+
 # Core system + Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \

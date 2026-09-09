@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 .env
 experiments/
+local_patches/
 workspace/
 .codex
 agentic_reflector_plan.md

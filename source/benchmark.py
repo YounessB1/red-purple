@@ -95,14 +95,48 @@ def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) ->
             # dispatch wouldn't limit how many containers are actually
             # mid-boot at once, which is the thing causing contention.
             with _start_semaphore:
-                subprocess.run(
-                    ["docker", "compose", "up", "-d"],
-                    cwd=bench_dir,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
+                try:
+                    subprocess.run(
+                        ["docker", "compose", "up", "-d"],
+                        cwd=bench_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                    stderr = getattr(e, "stderr", None) or ""
+                    unhealthy_dep = "is unhealthy" in stderr or "dependency failed to start" in stderr
+                    # `up -d` has its own short, compose-internal wait for
+                    # `depends_on: condition: service_healthy` (baked into
+                    # each benchmark's docker-compose.yml healthcheck
+                    # interval*retries — often ~50s) and hard-fails the
+                    # instant that expires, even though the dependency
+                    # container is still running and Docker keeps
+                    # re-probing it afterward. Under load that same wait can
+                    # instead run past `up -d`'s own 120s subprocess timeout
+                    # (TimeoutExpired, no clean stderr) rather than failing
+                    # fast with the message above — same underlying race,
+                    # just resolved slower. Tearing down here (the generic
+                    # retry path below) would throw away that already-
+                    # booting container and restart its clock from zero —
+                    # for a dependency that genuinely needs more than
+                    # compose's window, every retry loses the same race
+                    # either way. Poll real health ourselves instead, then
+                    # let `up -d` resume in place once it's actually
+                    # healthy; a genuinely dead/crashed container still
+                    # surfaces via _wait_for_healthy's own failure modes.
+                    if not (unhealthy_dep or isinstance(e, subprocess.TimeoutExpired)):
+                        raise
+                    _wait_for_healthy(bench_dir)
+                    subprocess.run(
+                        ["docker", "compose", "up", "-d"],
+                        cwd=bench_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
                 _wait_for_healthy(bench_dir)
             _active_benchmarks.add(benchmark_id)
             return find_host_port(benchmark_id), get_flag(benchmark_id, benchmarks_dir)
