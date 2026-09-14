@@ -178,6 +178,11 @@ def _trace_session(workdir: Path) -> tuple[dict, list]:
         }
         return extras, steps
 
+    except Exception:
+        # Corrupted/unreadable trace db costs this call its telemetry, not a
+        # crash of the whole benchmark run — caller already has stdout/flag
+        # detection independent of this data.
+        return {}, []
     finally:
         db.close()
 

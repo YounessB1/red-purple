@@ -200,7 +200,9 @@ def run(
     # random.Random(0) fallback) identical across every run. Draw a fresh
     # per-run seed from OS entropy instead, and log it so any specific run can
     # still be replayed later if needed.
-    run_seed = random.SystemRandom().randint(0, 2**31 - 1)
+    run_seed = experiment_config.get("run_seed")
+    if run_seed is None:
+        run_seed = random.SystemRandom().randint(0, 2**31 - 1)
     print(f"[red-purple] run_seed={run_seed} (pass to reproduce this exact run)")
 
     try:

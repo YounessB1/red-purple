@@ -19,6 +19,15 @@ from dotenv import load_dotenv
 # this process's subprocess calls only (source.benchmark's docker/make
 # invocations inherit it) — doesn't touch the caller's shell environment,
 # and is a no-op on native linux/amd64 hosts (see xbow/test_benchmarks.py).
+# OpenCode's session-tracking SQLite db (opencode.db, WAL mode) lives under
+# XDG_DATA_HOME by default (~/.local/share). This repo's home directory is a
+# CephFS mount shared across multiple machines — SQLite's WAL mode relies on
+# shared-memory coordination that network filesystems don't support reliably,
+# and two machines pointed at the same file corrupted it repeatedly. Force
+# every OpenCode process this run spawns (reflector/merger subprocesses here,
+# and anything inheriting this env) onto local disk instead.
+os.environ.setdefault("XDG_DATA_HOME", "/var/tmp/red-purple-opencode-data")
+
 os.environ.setdefault("DOCKER_DEFAULT_PLATFORM", "linux/amd64")
 
 from source import benchmark

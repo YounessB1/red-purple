@@ -1,6 +1,6 @@
 # Sequential experiments. main.py runs each top-level config in order.
 
-- experiment_name: split30_2_think
+- experiment_name: split30_think_2
   experiments_dir: experiments
   splits: split30
   max_calls: 5000
@@ -46,9 +46,9 @@
     val_minibatch_size: null
     # edit budget / learning rate
     evolution: skill      # prompt | skill — controls what reflector/merger may change
-    edit_budget: 5        # max patches applied per reflector step (max_lr)
-    min_edit_budget: 2    # floor for cosine/linear decay
-    lr_scheduler: cosine  # constant | linear | cosine
+    edit_budget: 20        # max patches applied per reflector step (max_lr) — set high so it never clips (accept all proposed patches)
+    min_edit_budget: 20    # floor for cosine/linear decay — irrelevant in constant mode, kept equal for clarity
+    lr_scheduler: constant # constant | linear | cosine — constant always returns edit_budget, i.e. accept all
 
   # ── Merger ────────────────────────────────────────────────────────────
   merger:

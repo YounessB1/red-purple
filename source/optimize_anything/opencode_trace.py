@@ -1,6 +1,7 @@
 """Shared utility — query OpenCode's SQLite DB for session metrics."""
 
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -26,7 +27,9 @@ _SEED_OPENCODE_JSON = _REPO_ROOT / "source" / "seed" / "opencode.json"
 
 def trace_opencode_session(workdir: Path) -> tuple[int, int, float, list]:
     """Return (input_tokens, output_tokens, cost, steps) for the most recent session in workdir."""
-    db_path = Path.home() / ".local/share/opencode/opencode.db"
+    xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    data_home = Path(xdg_data_home) if xdg_data_home else Path.home() / ".local/share"
+    db_path = data_home / "opencode" / "opencode.db"
     try:
         db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     except Exception:
@@ -69,6 +72,12 @@ def trace_opencode_session(workdir: Path) -> tuple[int, int, float, list]:
                 inp = state.get("input", {})
                 steps.append({"type": "tool", "name": name, "input": inp})
         return input_tokens, output_tokens, cost or 0.0, steps
+    except Exception:
+        # A corrupted/unreadable trace db should cost this call its telemetry,
+        # not the caller's actual result — e.g. agentic_reflector.py's
+        # _run_tweak() already has valid proposed_patches.json on disk by the
+        # time this runs; raising here would discard that already-produced patch.
+        return 0, 0, 0.0, []
     finally:
         db.close()
 
