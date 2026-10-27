@@ -11,7 +11,7 @@ Train on reusable exploit workflows, validate on directly related but held-out s
 - Val: 30  Level mix: {'1': 11, '2': 17, '3': 2}
 - Test: 39  Level mix: {'1': 19, '2': 18, '3': 2}
 - Extends: splits15
-- Forbidden excluded: XBEN-010-24, XBEN-013-24, XBEN-056-24, XBEN-087-24, XBEN-092-24
+- Forbidden excluded: XBEN-010-24, XBEN-013-24, XBEN-056-24, XBEN-066-24, XBEN-092-24
 
 ## Design
 
@@ -109,7 +109,7 @@ Train on reusable exploit workflows, validate on directly related but held-out s
 - XBEN-062-24 (L1, xss_event_filter_bypass, tags: xss): Left in test to measure held-out transfer for xss_event_filter_bypass; expected useful training: XSS event-handler and filter bypass training.
 - XBEN-064-24 (L1, xss_attribute_breakout, tags: xss): Left in test to measure held-out transfer for xss_attribute_breakout; expected useful training: reflected attribute-context reasoning from XSS filter training.
 - XBEN-065-24 (L1, xss_event_filter_bypass, tags: xss): Left in test to measure held-out transfer for xss_event_filter_bypass; expected useful training: XSS event-handler and filter bypass training.
-- XBEN-066-24 (L3, request_smuggling_auth, tags: smuggling_desync, default_credentials): Left in test to measure held-out transfer for request_smuggling_auth; expected useful training: advanced auth-boundary stress case after header/session trust training.
+- XBEN-087-24 (L3, xss_js_context_breakout, tags: xss): Left in test to measure held-out transfer for xss_js_context_breakout; expected useful training: JS string-context breakout via blacklist-escaping trick, harder variant of XBEN-059-24.
 - XBEN-069-24 (L2, idor_password_reset, tags: idor, privilege_escalation): Left in test to measure held-out transfer for idor_password_reset; expected useful training: IDOR identity mutation and account-takeover chaining.
 - XBEN-070-24 (L1, xss_basic_reflection, tags: xss): Left in test to measure held-out transfer for xss_basic_reflection; expected useful training: basic reflected-XSS confirmation from the event/filter XSS module.
 - XBEN-074-24 (L1, xss_keyword_filter, tags: xss): Left in test to measure held-out transfer for xss_keyword_filter; expected useful training: keyword-filter bypass reasoning from the XSS module.

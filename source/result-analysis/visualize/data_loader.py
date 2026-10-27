@@ -12,7 +12,28 @@ from embeddings import compute_similarity, compute_similarity_legacy
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DATASET_DIR = _REPO_ROOT / "source" / "dataset"
-_BASELINE_ROOT = _REPO_ROOT / "experiments" / "baseline"
+_BASELINE_ROOT = _REPO_ROOT / "experiments" / "train_tailored"
+_SEED_DIR = _REPO_ROOT / "source" / "seed"
+_BASELINE_AGENT_DIR = _REPO_ROOT / "source" / "train_tailored"
+_BASELINE_AGENT_EXCLUDE = {"evaluate.py", "__init__.py", "results", "__pycache__", "PROVENANCE.md"}
+_DEFINITION_SKIP_FILES = {"opencode.json"}
+
+
+def _folder_to_files(root: Path, exclude_top_level: set[str] = frozenset()) -> dict:
+    if not root.exists():
+        return {}
+    files = {}
+    for f in sorted(root.rglob("*")):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(root)
+        if rel.parts[0] in exclude_top_level:
+            continue
+        try:
+            files[str(rel)] = f.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    return files
 
 
 def _load_baseline_test_aggregate(config: dict, test_ids: set[str]) -> dict:
@@ -20,7 +41,7 @@ def _load_baseline_test_aggregate(config: dict, test_ids: set[str]) -> dict:
     results down to just this experiment's held-out test split, so it's directly
     comparable to the seed/best numbers in test/summary.json (same benchmark set).
 
-    The baseline harness (source/baseline/evaluate.py) scores by exact flag match
+    The baseline harness (source/train_tailored/evaluate.py) scores by exact flag match
     only — no LLM judge — so there's no partial-credit "avg_score" to report;
     pass_rate stands in for it.
     """
@@ -218,8 +239,27 @@ def load_experiment(exp_dir: Path) -> dict:
         if baseline_agg:
             test_summary = {**test_summary, "baseline": baseline_agg}
 
+    test_definitions = {}
+    if test_summary:
+        seed_files = _folder_to_files(_SEED_DIR)
+        if seed_files:
+            test_definitions["seed"] = seed_files
+        baseline_files = _folder_to_files(_BASELINE_AGENT_DIR, exclude_top_level=_BASELINE_AGENT_EXCLUDE)
+        if baseline_files:
+            test_definitions["baseline"] = baseline_files
+        best_path = exp_dir / "best_candidate.json"
+        if best_path.exists():
+            best_files = json.loads(best_path.read_text(encoding="utf-8")).get("files")
+            if isinstance(best_files, dict):
+                test_definitions["best"] = best_files
+        for name in test_definitions:
+            test_definitions[name] = {
+                k: v for k, v in test_definitions[name].items() if k not in _DEFINITION_SKIP_FILES
+            }
+
     return {"name": exp_dir.name, "iterations": iterations, "config": config, "summary": summary,
             "test_summary": test_summary,
+            "test_definitions": test_definitions,
             "bench_categories": load_bench_categories(),
             "similarity": compute_similarity(iterations, exp_dir),
             "similarity_legacy": compute_similarity_legacy(iterations, exp_dir)}

@@ -31,7 +31,8 @@ def run_one(bench_id: str, candidate: dict) -> str:
     try:
         resp = httpx.post(
             f"{AGENT_SERVER}/run",
-            params={"target": target, "seed_json": json.dumps(candidate)},
+            params={"target": target},
+            json=candidate,
             timeout=None,
         )
         resp.raise_for_status()

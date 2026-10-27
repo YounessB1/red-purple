@@ -184,7 +184,8 @@ def _run_once(target: str, candidate: dict, run_num: int, total: int, agent_serv
     print(f"\n── Run {run_num}/{total} ─────────────────────────────────────")
     resp = httpx.post(
         f"{agent_server}/run",
-        params={"target": target, "seed_json": json.dumps(candidate)},
+        params={"target": target},
+        json=candidate,
         timeout=None,
     )
     resp.raise_for_status()

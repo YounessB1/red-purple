@@ -25,11 +25,22 @@ OPENCODE_BIN: str = str(_LOCAL_BIN) if _LOCAL_BIN.exists() else (shutil.which("o
 _SEED_OPENCODE_JSON = _REPO_ROOT / "source" / "seed" / "opencode.json"
 
 
+def _opencode_db_path(workdir: Path) -> Path:
+    """Per-call SQLite DB path (see OPENCODE_DB in run_opencode_agent's subprocess env).
+
+    OpenCode defaults to one shared `~/.local/share/opencode/opencode.db` for
+    every invocation, regardless of --dir. Concurrent scorer/diagnoser calls
+    (run.workers concurrency) all writing to that single file race on its
+    SQLite lock — the same failure mode observed with concurrent CTF-agent
+    replicates (see source/agent/runner.py). Giving each call its own DB file
+    via OPENCODE_DB removes the shared writer entirely.
+    """
+    return workdir / "opencode.db"
+
+
 def trace_opencode_session(workdir: Path) -> tuple[int, int, float, list]:
     """Return (input_tokens, output_tokens, cost, steps) for the most recent session in workdir."""
-    xdg_data_home = os.environ.get("XDG_DATA_HOME")
-    data_home = Path(xdg_data_home) if xdg_data_home else Path.home() / ".local/share"
-    db_path = data_home / "opencode" / "opencode.db"
+    db_path = _opencode_db_path(workdir)
     try:
         db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     except Exception:
@@ -102,6 +113,7 @@ def run_opencode_agent(
         proc = subprocess.run(
             [OPENCODE_BIN, "run", "--agent", agent, "--model", model, "--dir", str(workdir), prompt],
             capture_output=True, text=True, timeout=timeout,
+            env={**os.environ, "OPENCODE_DB": str(_opencode_db_path(workdir))},
         )
         if proc.returncode != 0 and proc.stderr:
             print(f"[{lbl}] opencode stderr: {proc.stderr.strip()[:200]}")

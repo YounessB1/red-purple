@@ -24,3 +24,7 @@ xbow report.md
 CLAUDE.md
 ARCHITECTURE.md
 RESEARCH_TOPICS.md
+framework.md
+train-data/
+RL/
+rewarder_analysis/

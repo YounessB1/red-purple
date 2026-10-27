@@ -1,6 +1,7 @@
 const DATA = __DATA__;
 let selId  = null;
 let selTab = 'diff';
+let selTestTab = 'results';
 let selEvoTab = 'tree';
 let treeExpanded = new Set();
 let treeViewState = null;

@@ -1,4 +1,4 @@
-"""Benchmark lifecycle management — start, stop, port discovery for XBOW challenges."""
+"""Benchmark lifecycle management — start, stop, port discovery for XBOW and nyu_ctf challenges."""
 
 import json
 import random
@@ -10,6 +10,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 BENCHMARKS_DIR = _REPO_ROOT / "xbow" / "benchmarks"
+NYU_BENCHMARKS_DIR = _REPO_ROOT / "nyu_ctf" / "benchmarks"
 
 # Matches "0.0.0.0:35167->80/tcp" — captures (host port, container port)
 _HOST_PORT_RE = re.compile(r"0\.0\.0\.0:(\d+)->(\d+)/tcp")
@@ -68,16 +69,57 @@ def get_flag(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) -> str:
     return result.stdout.strip()
 
 
-def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) -> tuple[int, str]:
-    """Start a benchmark's Docker containers and return (host port, expected flag).
+def start_benchmark(
+    benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR, project_suffix: str = ""
+) -> tuple[int, list[int], str]:
+    """Start a benchmark's containers; return (primary port, extra ports, flag).
+
+    `extra_host_ports` is every *other* host-published port besides the
+    primary one (empty for the common single-service benchmark). A few
+    benchmarks publish a second service the flag actually lives behind — SSH
+    in XBEN-042-24, an unauthenticated S3 store in XBEN-084-24 — on its own
+    random host port; returning those here lets the caller expose them to the
+    agent instead of silently dropping everything but the web port.
 
     Builds, starts detached, then polls real container health ourselves
     (see module-level comment above) instead of trusting `docker compose up
     --wait`'s brittle single-shot verdict. Retries the whole cycle on
     failure — concurrent workers routinely contend for host resources
     during container boot.
+
+    `project_suffix`, when non-empty, isolates this run's containers/network
+    under their own `docker compose -p <benchmark_id>-lower-<suffix>` project
+    instead of the directory-derived default — this is what makes it safe to
+    run several concurrent instances of the *same* benchmark_id (e.g. N
+    replicate runs for variance measurement), which would otherwise collide
+    on container/network names. Empty (the default) reproduces the exact
+    project name `docker compose` would already pick on its own, so every
+    existing caller is unaffected.
+
+    Docker Compose ties a built image to its project name (`<project>-
+    <service>`), so a suffixed project can't reuse the image `make build`
+    already built and correctly tagged under the *default* project name —
+    left alone, the later `docker compose -p <project_name> up -d` would
+    silently rebuild from scratch for that project, and that rebuild doesn't
+    get `make build`'s explicit `--build-arg FLAG=...`, so it falls back to
+    docker-compose.yml's own build-arg resolution (environment / a
+    benchmark's `.env` file) — which is very often a stale placeholder, not
+    the real flag `get_flag` computes. Confirmed on XBEN-022-24: every
+    suffixed replicate ended up with a decoy flag baked into `/flag` instead
+    of the real one, so an agent that genuinely solved the challenge and
+    `cat`'d that file still failed scoring, having faithfully reported a
+    real (but environment-corrupted) result. When `project_suffix` is set,
+    `make build` still runs exactly once, the same way every other caller
+    (e.g. the GEPA optimizer) already builds this benchmark — the *only*
+    difference is that its resulting images are then `docker tag`'d under
+    each suffixed project's expected name before `up -d`, so every replicate
+    runs the literal same image bytes as the default build, never
+    triggering Compose's own (differently-arg'd) build path at all.
     """
     bench_dir = benchmarks_dir / benchmark_id
+    default_project_name = benchmark_id.lower()
+    project_name = f"{default_project_name}{project_suffix}"
+    expected_flag = get_flag(benchmark_id, benchmarks_dir)
     last_error: Exception | None = None
 
     for attempt in range(_START_RETRIES):
@@ -90,6 +132,33 @@ def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) ->
                 text=True,
                 timeout=600,
             )
+            if project_suffix:
+                services = subprocess.run(
+                    ["docker", "compose", "config", "--services"],
+                    cwd=bench_dir, check=True, capture_output=True, text=True, timeout=30,
+                ).stdout.split()
+                for service in services:
+                    src = f"{default_project_name}-{service}:latest"
+                    # Only services with a `build:` section produce a
+                    # project-named image for `make build` to create and for us
+                    # to retag. Pull-only services (e.g. `image: mysql:5.7`,
+                    # `image: mongo:latest`) have no `<project>-<service>` image
+                    # at all — compose reuses the upstream image directly under
+                    # any project name — so there is nothing to retag, and
+                    # `docker tag` would fail with "No such image". Skip those.
+                    if subprocess.run(
+                        ["docker", "image", "inspect", src],
+                        capture_output=True, text=True,
+                    ).returncode != 0:
+                        continue
+                    subprocess.run(
+                        [
+                            "docker", "tag",
+                            src,
+                            f"{project_name}-{service}:latest",
+                        ],
+                        check=True, capture_output=True, text=True, timeout=30,
+                    )
             # Held across up+health-poll, not just the `up -d` dispatch —
             # `up -d` returns almost instantly, so only throttling the
             # dispatch wouldn't limit how many containers are actually
@@ -97,7 +166,7 @@ def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) ->
             with _start_semaphore:
                 try:
                     subprocess.run(
-                        ["docker", "compose", "up", "-d"],
+                        ["docker", "compose", "-p", project_name, "up", "-d"],
                         cwd=bench_dir,
                         check=True,
                         capture_output=True,
@@ -128,18 +197,21 @@ def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) ->
                     # surfaces via _wait_for_healthy's own failure modes.
                     if not (unhealthy_dep or isinstance(e, subprocess.TimeoutExpired)):
                         raise
-                    _wait_for_healthy(bench_dir)
+                    _wait_for_healthy(bench_dir, project_name)
                     subprocess.run(
-                        ["docker", "compose", "up", "-d"],
+                        ["docker", "compose", "-p", project_name, "up", "-d"],
                         cwd=bench_dir,
                         check=True,
                         capture_output=True,
                         text=True,
                         timeout=120,
                     )
-                _wait_for_healthy(bench_dir)
+                _wait_for_healthy(bench_dir, project_name)
             _active_benchmarks.add(benchmark_id)
-            return find_host_port(benchmark_id), get_flag(benchmark_id, benchmarks_dir)
+            all_ports = find_host_ports(benchmark_id, project_suffix)
+            primary_port = find_host_port(benchmark_id, project_suffix)
+            extra_host_ports = [hp for hp, _cp in all_ports if hp != primary_port]
+            return primary_port, extra_host_ports, expected_flag
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError) as e:
             last_error = e
             if attempt < _START_RETRIES - 1:
@@ -152,7 +224,7 @@ def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) ->
                 # RedPurpleAdapter — worse than just skipping a cleanup attempt.
                 try:
                     subprocess.run(
-                        ["docker", "compose", "down", "--remove-orphans"],
+                        ["docker", "compose", "-p", project_name, "down", "--remove-orphans"],
                         cwd=bench_dir,
                         capture_output=True,
                         timeout=60,
@@ -175,6 +247,7 @@ def start_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) ->
 
 def _wait_for_healthy(
     bench_dir: Path,
+    project_name: str,
     timeout: float = _HEALTH_TIMEOUT,
     poll_interval: float = _HEALTH_POLL_INTERVAL,
 ) -> None:
@@ -189,7 +262,7 @@ def _wait_for_healthy(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = subprocess.run(
-            ["docker", "compose", "ps", "--format", "json"],
+            ["docker", "compose", "-p", project_name, "ps", "--format", "json"],
             cwd=bench_dir,
             capture_output=True,
             text=True,
@@ -208,16 +281,40 @@ def _wait_for_healthy(
     raise RuntimeError(f"{bench_dir.name} did not become healthy within {timeout:.0f}s")
 
 
-def stop_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR) -> None:
-    """Tear down a benchmark's Docker containers."""
+def stop_benchmark(benchmark_id: str, benchmarks_dir: Path = BENCHMARKS_DIR, project_suffix: str = "") -> None:
+    """Tear down a benchmark's Docker containers.
+
+    `project_suffix` must match the value passed to the corresponding
+    `start_benchmark` call — see its docstring.
+    """
     _active_benchmarks.discard(benchmark_id)
     bench_dir = benchmarks_dir / benchmark_id
+    default_project_name = benchmark_id.lower()
+    project_name = f"{default_project_name}{project_suffix}"
     subprocess.run(
-        ["docker", "compose", "down", "--remove-orphans"],
+        ["docker", "compose", "-p", project_name, "down", "--remove-orphans"],
         cwd=bench_dir,
         capture_output=True,
         timeout=60,
     )
+    if project_suffix:
+        # start_benchmark only re-tagged the default build's images under
+        # this project's name (see its docstring) — untag them here so
+        # `docker images` doesn't accumulate one stray tag pair per
+        # replicate run. Safe: it's just a tag reference, not the
+        # underlying layers, which stay alive under the default tag.
+        try:
+            services = subprocess.run(
+                ["docker", "compose", "config", "--services"],
+                cwd=bench_dir, capture_output=True, text=True, timeout=30,
+            ).stdout.split()
+            for service in services:
+                subprocess.run(
+                    ["docker", "rmi", f"{project_name}-{service}:latest"],
+                    capture_output=True, timeout=30,
+                )
+        except subprocess.TimeoutExpired:
+            pass
 
 
 def force_stop_all(benchmarks_dir: Path = BENCHMARKS_DIR) -> None:
@@ -229,6 +326,14 @@ def force_stop_all(benchmarks_dir: Path = BENCHMARKS_DIR) -> None:
 
     Queries docker ps directly instead of relying on _active_benchmarks to
     avoid a race condition where threads start containers after the set is cleared.
+
+    Known gap: reconstructs only the bare benchmark_id from a container name,
+    not its `project_suffix` (see start_benchmark), so `docker compose down`
+    here always targets the *default* (unsuffixed) project. If several
+    suffixed replicate runs of the same benchmark_id are active at SIGINT
+    time, their containers won't be torn down by this path — acceptable for
+    now since this is already documented as best-effort, but worth revisiting
+    if suffixed runs become routine rather than a one-off.
     """
     result = subprocess.run(
         ["docker", "ps", "--format", "{{.Names}}"],
@@ -239,10 +344,11 @@ def force_stop_all(benchmarks_dir: Path = BENCHMARKS_DIR) -> None:
     # Collect every benchmark_id whose containers are still up
     to_stop: set[str] = set(_active_benchmarks)
     for name in running_names:
-        # Container names look like "xben-054-24-web-1" — reconstruct benchmark_id
-        m = re.match(r"(xben-\d+-\d+)-", name)
+        # Container names look like "xben-054-24-web-1" or "nyu-024-phil-nginx-1"
+        # — reconstruct benchmark_id from either naming scheme.
+        m = re.match(r"(xben-\d+-\d+|nyu-\d+)-", name)
         if m:
-            bench_id = m.group(1).upper()  # "XBEN-054-24"
+            bench_id = m.group(1).upper()  # "XBEN-054-24" or "NYU-024"
             to_stop.add(bench_id)
 
     for benchmark_id in to_stop:
@@ -262,17 +368,25 @@ def force_stop_all(benchmarks_dir: Path = BENCHMARKS_DIR) -> None:
     _active_benchmarks.clear()
 
 
-def find_host_port(benchmark_id: str) -> int:
-    """Find the host-mapped port for a benchmark using `docker ps`.
+def find_host_ports(benchmark_id: str, project_suffix: str = "") -> list[tuple[int, int]]:
+    """Return every host-mapped (host_port, container_port) pair for a benchmark.
 
-    Filters containers by benchmark name and returns the host port of the
-    container that has a 0.0.0.0:PORT->CONTAINER/tcp mapping (the externally
-    accessible service, not internal-only containers). If more than one
-    mapping exists, prefers a well-known web port (see _WEB_PORTS) over
-    whatever `docker ps` happens to list first.
+    Filters containers by the exact compose project (the label `docker
+    compose` stamps on every container it creates, `com.docker.compose.
+    project`) rather than a substring of the benchmark name — a substring
+    filter would also match other concurrent replicate runs of the same
+    benchmark_id under a different `project_suffix` (see start_benchmark),
+    and could hand this call another run's port. Each pair comes from a
+    0.0.0.0:PORT->CONTAINER/tcp mapping (an externally accessible service,
+    not internal-only containers). A handful of benchmarks publish more than
+    one such port on the same container (e.g. a web app + SSH in XBEN-042-24,
+    or a web app + S3 in XBEN-084-24) — all of them are returned here so the
+    caller can hand the full attack surface to the agent, not just the one
+    web port `find_host_port` picks.
     """
+    project_name = f"{benchmark_id.lower()}{project_suffix}"
     result = subprocess.run(
-        ["docker", "ps", "--filter", f"name={benchmark_id.lower()}", "--format", "{{.Ports}}"],
+        ["docker", "ps", "--filter", f"label=com.docker.compose.project={project_name}", "--format", "{{.Ports}}"],
         capture_output=True,
         text=True,
         check=True,
@@ -285,9 +399,20 @@ def find_host_port(benchmark_id: str) -> int:
 
     if not candidates:
         raise RuntimeError(
-            f"No host-mapped port found for benchmark '{benchmark_id}'. "
+            f"No host-mapped port found for benchmark '{benchmark_id}' (project '{project_name}'). "
             f"docker ps output:\n{result.stdout}"
         )
+    return candidates
 
+
+def find_host_port(benchmark_id: str, project_suffix: str = "") -> int:
+    """Find the single primary host-mapped port for a benchmark.
+
+    Returns the host port of the externally accessible service. If more than
+    one mapping exists, prefers a well-known web port (see _WEB_PORTS) over
+    whatever `docker ps` happens to list first. Use `find_host_ports` when
+    the non-primary ports matter too (multi-service benchmarks).
+    """
+    candidates = find_host_ports(benchmark_id, project_suffix)
     web_matches = [host_port for host_port, container_port in candidates if container_port in _WEB_PORTS]
     return web_matches[0] if web_matches else candidates[0][0]

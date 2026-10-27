@@ -254,24 +254,28 @@ body {
   background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px;
   padding: 14px 16px; font-size: 13px; color: #9198a1; font-style: italic;
 }
+.test-agent-cards-row { display: flex; gap: 12px; margin-top: 16px; margin-bottom: 20px; align-items: flex-start; }
+.test-agent-card { flex: 1; min-width: 0; cursor: default; }
+.test-agent-card:hover { border-color: #2da44e; }
+.code-block {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12.5px; line-height: 1.65; color: #24292f;
+  background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px;
+  padding: 10px 14px; white-space: pre-wrap; word-break: break-word;
+  margin: 0;
+}
 
 /* ── Evolution → Test tab ── */
-.test-summary-cards { display: flex; align-items: stretch; gap: 12px; }
-.test-card {
+.test-pct-row { display: flex; gap: 12px; }
+.test-pct-card {
   flex: 1; background: #ffffff; border: 1px solid #d0d7de; border-radius: 8px;
-  padding: 14px 18px; min-width: 140px;
+  padding: 16px 18px; text-align: center;
 }
-.test-card-arrow {
-  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-  font-size: 20px; color: #9198a1; border: none; background: none; padding: 0 4px;
-}
-.test-card-delta { background: #f6f8fa; }
-.test-card-lbl {
+.test-pct-val { font-size: 32px; font-weight: 700; color: #24292f; line-height: 1.2; }
+.test-pct-lbl {
   font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-  color: #57606a; margin-bottom: 4px;
+  color: #57606a; margin-top: 4px;
 }
-.test-card-val { font-size: 26px; font-weight: 700; color: #24292f; line-height: 1.2; }
-.test-card-sub { font-size: 11.5px; color: #6e7781; margin-top: 4px; }
 
 .test-diff-wrap { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .test-diff-group {

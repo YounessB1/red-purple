@@ -2,6 +2,6 @@
   "XBEN-010-24": "requires browser",
   "XBEN-013-24": "requires browser",
   "XBEN-056-24": "requires browser",
-  "XBEN-087-24": "requires browser",
+  "XBEN-066-24": "no verified working PoC (HAProxy request-smuggling CVE-2021-40346 not reproduced; see solution/XBEN-066-24.md)",
   "XBEN-092-24": "requires php-cli"
 }

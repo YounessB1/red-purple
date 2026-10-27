@@ -12,21 +12,7 @@
 // it beat a well-informed human-written agent", since train/val are what
 // GEPA searched over.
 
-function trPct(x) {
-  return (x == null) ? '—' : (x * 100).toFixed(1) + '%';
-}
-
-function testDeltaClass(delta) {
-  if (delta > 0.0001) return 's-delta-pos';
-  if (delta < -0.0001) return 's-delta-neg';
-  return 's-delta-eq';
-}
-
-function testDeltaLabel(delta) {
-  return (delta > 0 ? '+' : '') + (delta * 100).toFixed(1) + 'pp';
-}
-
-// buckets: ordered list of { label, data } — each data is a by_level/by_family dict or null
+// buckets: ordered list of { label, data } — each data is a by_family dict or null
 function testByBucketRows(buckets) {
   const keys = [...new Set(buckets.flatMap(b => Object.keys(b.data || {})))];
   return keys
@@ -36,23 +22,19 @@ function testByBucketRows(buckets) {
         return { n: v.n, solved: v.solved, rate: v.n ? v.solved / v.n : 0 };
       });
       const n = Math.max(...cells.map(c => c.n));
-      const last = cells[cells.length - 1], first = cells[0];
-      return { key: k, n, cells, delta: last.rate - first.rate };
+      return { key: k, n, cells };
     })
     .sort((a, b) => b.n - a.n);
 }
 
 function testBucketTable(title, buckets) {
   const rows = testByBucketRows(buckets);
-  const head = buckets.map(b => `<th>${esc(b.label)}</th>`).join('') + (buckets.length > 1 ? '<th>Δ</th>' : '');
+  const head = buckets.map(b => `<th>${esc(b.label)}</th>`).join('');
   const body = rows.map(r => {
     const cellsHtml = r.cells.map(c =>
       `<td class="${c.n === 0 ? 's-none' : c.rate === 1 ? 's-pass' : c.rate === 0 ? 's-fail' : 's-mid'}">${c.n ? `${c.solved}/${c.n}` : '—'}</td>`
     ).join('');
-    const deltaHtml = buckets.length > 1
-      ? `<td class="${testDeltaClass(r.delta)}">${r.delta > 0 ? '+' : ''}${(r.delta * 100).toFixed(0)}pp</td>`
-      : '';
-    return `<tr><td class="bench-name">${esc(r.key)} <span class="bench-cat">n=${r.n}</span></td>${cellsHtml}${deltaHtml}</tr>`;
+    return `<tr><td class="bench-name">${esc(r.key)} <span class="bench-cat">n=${r.n}</span></td>${cellsHtml}</tr>`;
   }).join('');
   return `
     <div class="scores-panel">
@@ -73,13 +55,68 @@ function testDiffList(label, ids, cls) {
     </div>`;
 }
 
-function testCardHtml(label, agg, extraSub) {
+// Big percentage-only cards, one per agent — just the number, nothing else.
+function testSummaryCards(buckets) {
+  return `<div class="test-pct-row">${buckets.map(b => {
+    const rate = b.agg.n ? b.agg.solved / b.agg.n : 0;
+    return `
+      <div class="test-pct-card">
+        <div class="test-pct-val">${(rate * 100).toFixed(1)}%</div>
+        <div class="test-pct-lbl">${esc(b.label)}</div>
+      </div>`;
+  }).join('')}</div>`;
+}
+
+// Same graphical file-block card used by the Evolution → Tree view (evolution.js:
+// isSkillFile/fileColor/fileDisplayName), reused here so Seed/Baseline/Best read
+// as the same visual "shape" as any tree node — just always expanded, no
+// click-to-toggle/val-badge/pruned styling since these aren't tree candidates.
+function agentCardHtml(label, files) {
+  const blocks = Object.keys(files || {})
+    .filter(f => f === 'prompt.md' || f === 'AGENTS.md' || isSkillFile(f))
+    .sort()
+    .map(f => {
+      const lines    = (files[f] || '').split('\n').length;
+      const name     = fileDisplayName(f);
+      const col      = fileColor(f);
+      const isSkill  = isSkillFile(f);
+      const radius   = isSkill ? '14px' : '5px';
+      const extraPad = Math.min(60, Math.max(0, lines * 3 - 8));
+      return `<div class="evo-file-block"
+        style="border-radius:${radius};padding-right:${8 + extraPad}px;background:${col.bg};border-color:${col.border};color:${col.text}"
+        title="${esc(f)} — ${lines} lines">${esc(name)}</div>`;
+    }).join('');
   return `
-    <div class="test-card">
-      <div class="test-card-lbl">${esc(label)}</div>
-      <div class="test-card-val">${trPct(agg.pass_rate)}</div>
-      <div class="test-card-sub">${agg.solved}/${agg.n} solved${extraSub ? ' · ' + esc(extraSub) : ''}</div>
+    <div class="evo-candidate kept test-agent-card">
+      <div class="evo-candidate-hdr">${esc(label)}</div>
+      <div class="evo-files">${blocks || '<span class="evo-candidate-sub">no prompt/AGENTS/skill files</span>'}</div>
     </div>`;
+}
+
+// labels/order must match testSummaryCards' `buckets` column order so the two
+// rows line up (Baseline-under-Baseline, Seed-under-Seed, Best-under-Best).
+function renderAgentCardsRow(buckets, defs) {
+  const labelToFiles = { Baseline: defs.baseline, Seed: defs.seed, Best: defs.best };
+  const cards = buckets.map(b => agentCardHtml(b.label, labelToFiles[b.label]));
+  if (!cards.length) return '';
+  return `<div class="section-title">Agent definitions</div><div class="test-agent-cards-row">${cards.join('')}</div>`;
+}
+
+// Full (non-diff) file dump for a candidate's whole file set — used by the
+// Seed/Baseline/Best definition tabs, as opposed to the Diff tab's parent→child comparison.
+function renderFullDefinition(files) {
+  if (!files || !Object.keys(files).length) {
+    return `<div class="no-diff">No file definition available.</div>`;
+  }
+  const names = Object.keys(files).sort();
+  let html = `<div class="files-overview">${
+    names.map(f => `<div class="file-row"><span class="file-name">${esc(f)}</span></div>`).join('')
+  }</div>`;
+  for (const f of names) {
+    html += `<div class="section-title" style="margin-top:18px">${esc(f)}</div>`;
+    html += `<pre class="code-block">${esc(files[f] || '')}</pre>`;
+  }
+  return html;
 }
 
 function renderTestResults(el) {
@@ -90,55 +127,49 @@ function renderTestResults(el) {
     return;
   }
 
-  const baseline = ts.baseline || null;
-  const seed = ts.seed, best = ts.best;
-  const deltaSeedBest = ts.delta_pass_rate ?? (best.pass_rate - seed.pass_rate);
-  const diff = ts.diff || {};
+  const defs = DATA.test_definitions || {};
+  const tabs = [{ id: 'results', label: 'Results' }];
+  if (defs.seed)     tabs.push({ id: 'seed',     label: 'Seed definition' });
+  if (defs.baseline) tabs.push({ id: 'baseline', label: 'Baseline definition' });
+  if (defs.best)     tabs.push({ id: 'best',     label: 'Best candidate definition' });
+  if (!tabs.find(t => t.id === selTestTab)) selTestTab = 'results';
 
-  const buckets = [];
-  if (baseline) buckets.push({ label: 'Baseline', data: null, agg: baseline });
-  buckets.push({ label: 'Seed', data: null, agg: seed });
-  buckets.push({ label: 'Best', data: null, agg: best });
+  const tabBar = `<div class="tab-bar">${
+    tabs.map(t => `<button class="tab${selTestTab===t.id?' sel':''}" onclick="selTestTab='${t.id}';renderMain()">${esc(t.label)}</button>`).join('')
+  }</div>`;
 
-  const levelBuckets  = buckets.map(b => ({ label: b.label, data: b.agg.by_level }));
-  const familyBuckets = buckets.map(b => ({ label: b.label, data: b.agg.by_family }));
+  let body = '';
+  if (selTestTab === 'seed')          body = renderFullDefinition(defs.seed);
+  else if (selTestTab === 'baseline') body = renderFullDefinition(defs.baseline);
+  else if (selTestTab === 'best')     body = renderFullDefinition(defs.best);
+  else {
+    const baseline = ts.baseline || null;
+    const seed = ts.seed, best = ts.best;
+    const diff = ts.diff || {};
 
-  let cardsHtml = '';
-  if (baseline) {
-    cardsHtml += testCardHtml('Baseline', baseline, `flag-match only, ${esc(baseline.source || '')}`);
-    cardsHtml += `<div class="test-card test-card-arrow">→</div>`;
-  }
-  cardsHtml += testCardHtml('Seed', seed, `avg score ${(seed.avg_score ?? 0).toFixed(2)}`);
-  cardsHtml += `<div class="test-card test-card-arrow">→</div>`;
-  cardsHtml += testCardHtml('Best', best, `avg score ${(best.avg_score ?? 0).toFixed(2)}`);
-  cardsHtml += `
-    <div class="test-card test-card-delta">
-      <div class="test-card-lbl">Δ Best − Seed</div>
-      <div class="test-card-val ${testDeltaClass(deltaSeedBest)}">${testDeltaLabel(deltaSeedBest)}</div>
-      <div class="test-card-sub">held-out test split, n=${best.n}</div>
-    </div>`;
-  if (baseline) {
-    const deltaBestBaseline = best.pass_rate - baseline.pass_rate;
-    cardsHtml += `
-      <div class="test-card test-card-delta">
-        <div class="test-card-lbl">Δ Best − Baseline</div>
-        <div class="test-card-val ${testDeltaClass(deltaBestBaseline)}">${testDeltaLabel(deltaBestBaseline)}</div>
-        <div class="test-card-sub">optimized vs. hand-authored agent</div>
+    const buckets = [];
+    if (baseline) buckets.push({ label: 'Baseline', data: null, agg: baseline });
+    buckets.push({ label: 'Seed', data: null, agg: seed });
+    buckets.push({ label: 'Best', data: null, agg: best });
+
+    const familyBuckets = buckets.map(b => ({ label: b.label, data: b.agg.by_family }));
+
+    body = `
+      ${testSummaryCards(buckets)}
+
+      ${renderAgentCardsRow(buckets, defs)}
+
+      <div class="scores-wrap" style="margin-top:16px;">
+        ${testBucketTable('Family', familyBuckets)}
+      </div>
+
+      <div class="test-diff-wrap">
+        ${testDiffList('Solved by best only (gained vs. seed)', diff.solved_by_best_only, 'test-diff-gain')}
+        ${testDiffList('Solved by seed only (regressed vs. seed)', diff.solved_by_seed_only, 'test-diff-loss')}
+        ${testDiffList('Solved by both (seed & best)', diff.solved_by_both, 'test-diff-both')}
+        ${testDiffList('Solved by neither (seed & best)', diff.solved_by_neither, 'test-diff-neither')}
       </div>`;
   }
 
-  el.innerHTML = `
-    <div class="test-summary-cards">${cardsHtml}</div>
-
-    <div class="scores-wrap" style="margin-top:16px;">
-      ${testBucketTable('Level', levelBuckets)}
-      ${testBucketTable('Family', familyBuckets)}
-    </div>
-
-    <div class="test-diff-wrap">
-      ${testDiffList('Solved by best only (gained vs. seed)', diff.solved_by_best_only, 'test-diff-gain')}
-      ${testDiffList('Solved by seed only (regressed vs. seed)', diff.solved_by_seed_only, 'test-diff-loss')}
-      ${testDiffList('Solved by both (seed & best)', diff.solved_by_both, 'test-diff-both')}
-      ${testDiffList('Solved by neither (seed & best)', diff.solved_by_neither, 'test-diff-neither')}
-    </div>`;
+  el.innerHTML = tabBar + body;
 }

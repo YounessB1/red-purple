@@ -35,10 +35,8 @@ def main() -> None:
         print(f"[test] Sending run request to {AGENT_SERVER}")
         resp = httpx.post(
             f"{AGENT_SERVER}/run",
-            params={
-                "target": target,
-                "seed_json": json.dumps(candidate),
-            },
+            params={"target": target},
+            json=candidate,
             timeout=None,
         )
         resp.raise_for_status()

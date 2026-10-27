@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Web exploitation
     sqlmap wfuzz \
     # Credential attacks
-    hydra john sshpass \
+    hydra john sshpass openssh-client expect \
     # Network tools
     netcat-openbsd proxychains4 \
     # Text processing
@@ -42,8 +42,10 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && 
 RUN npm install -g opencode-ai@1.14.50
 
 # Python dependencies
+# requests/paramiko are exploit-runtime deps (HTTP + SSH); pinned explicitly so a
+# litellm dependency change can't silently drop requests and break HTTP-based solves.
 RUN python3 -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir litellm fastapi "uvicorn[standard]"
+    /opt/venv/bin/pip install --no-cache-dir litellm fastapi "uvicorn[standard]" requests paramiko
 
 ENV PATH="/opt/venv/bin:$PATH"
 
